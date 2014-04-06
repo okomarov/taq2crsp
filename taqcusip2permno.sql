@@ -82,21 +82,123 @@ INTO TABLE hfbetas.taqcodetype character set utf8 FIELDS TERMINATED BY '\t' LINE
 # STEP 1) create final table & copy all entries from TAQcusips
 create table final (PK int not null auto_increment, permno int, cusip char(8), ncusip char(8), namedt int,
                     datef int, nameenddt int, symbol varchar(10), ticker varchar(10), name varchar(30),
+# Create final table & copy all entries from TAQcusips
+create table final (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
+					name varchar(30), datef int, 
                     primary key (PK) KEY_BLOCK_SIZE=8,
-				    KEY `final_cusip` (`cusip`),
+				    KEY `final_ID` (`ID`),
+					KEY `final_cusip` (`cusip`),
 					KEY `final_datef` (`datef`),
 					KEY `final_symbol` (`symbol`),
-					KEY `final_name` (`name`))
-					
+					KEY `final_name` (`name`))				
 engine=InnoDB;
-
 # copy all taqcusips to final
 INSERT INTO final (`cusip`, `datef`, `symbol`, `name`)
-select taq.cusip, taq.datef, taq.symbol, taq.name 
+select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
 	from taqcusips taq;
   
+
+# Check uniqueness of entries in final 
+select count(*) # distinct count
+	from (select distinct cusip, datef, symbol, name 
+			from taqcusips) A
+union # group by count
+select count(*)
+	from (select * 
+			from taqcusips
+			group by cusip, datef, symbol, name) A
+union # simple count
+select count(*)
+	from taqcusips;
+
+# Redundancy check 
+select *
+	from taqcusips
+	group by cusip, datef, symbol, name
+	having count(*) > 1;
+
 # STEP 2) merge with crsp data
+
 # a) on cusips
+# Counts of simple cusip to ncusip. 
+select count(*)
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+union
+select count(*)
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (f.datef BETWEEN q.namedt and q.nameenddt);
+
+# Big difference, but only 2232 records are not matched by the more stringent condition with dates.
+# In fact, the difference in counts comes mostly from duplication in the simple cusip = ncusip. Basically,
+# the fdate crossjoins each namedate range.
+select count(distinct f.pk)
+	from final f join crsp_stocknames q on f.cusip = q.ncusip;
+
+# TAQ fdate might be outside the [namedt - nameenddt] range. In this case we lose the match. 
+# Also, cannot use [st_date, end_date] because it might be a smaller range than the namedate one.
+select count(distinct l.pk)
+	# Simple cusip = ncusip join ...
+	from (select f.pk, f.permno, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, q.ticker, f.name
+			from final f 
+				join crsp_stocknames q 
+				on f.cusip = q.ncusip) L 
+		# ...against cusip=ncusip and date condition
+		left join (select f.pk, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, f.name
+					  from final f 
+						 join crsp_stocknames q 
+						 on f.cusip = q.ncusip AND f.datef BETWEEN q.namedt and q.nameenddt) R
+		on L.PK = R.PK 
+	where R.PK is null
+	order by L.ncusip;
+
+# Recover matches avoiding duplication by joining on fdate's month and year within namedate's month and year 
+# Some sort of vintage date as in WRDS
+select symbol
+	from taqcusips
+	group by symbol, cusip, month(datef), year(datef)
+	having count(*) > 1;
+
+# Check type of matches
+select count(*) # cusip and date
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (f.datef BETWEEN q.namedt and q.nameenddt)
+union
+select count(*) # cusip and month
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (extract(year_month from f.datef) 
+                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
+union
+select count(*) # cusip, symbol and date
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
+			AND (f.datef BETWEEN q.namedt and q.nameenddt)
+union
+select count(*) # cusip, symbol and month
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
+			AND (extract(year_month from f.datef) 
+                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt));
+
+
+# Check duplication in cusip and month
+select count(*) from(
+select f.pk, q.permno, f.cusip, q.ncusip, min(q.namedt) namedt, f.datef, max(q.nameenddt) nameenddt, f.symbol, q.ticker, f.name
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (extract(year_month from f.datef) 
+                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
+	#where f.pk = 4291
+	group by q.permno, f.cusip, f.datef, q.ncusip ) F
+	having count(*) > 1
+
+select * from taqcusips where cusip in (select distinct cusip from taqcusips where symbol ='ABD');
+select * from taqcusips where cusip in('00081T10');
+select * from taqcusips where symbol ='AAG';
+
 UPDATE final f, crsp_stocknames q
 SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
 WHERE f.cusip=q.ncusip AND (f.datef BETWEEN q.namedt and q.nameenddt);
@@ -140,6 +242,16 @@ select f.*
 */
 
 
+# Issue: same cusip and date, different symbols
+# EXPLANATION: some symbols might e.g. be traded on a set of different exchanges
+# When creating time-invariant ID, need to consider PERMNO with SYMBOL
+select * 
+	from (select distinct cusip, symbol, datef
+			from taqcusips
+			where cusip is not null) A
+	group by cusip, datef
+	having count(*) > 1
+	order by cusip, datef;
 ## OLD:
 
 /*
