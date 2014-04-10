@@ -61,12 +61,14 @@ CUSIP = char(TAQmaster.CUSIP);
 % Extract 8-CUSIP
 TAQmaster.CUSIP8 = cellstr(CUSIP(:,1:8));
 % Extract the 9th digit/character, i.e. 3rd of the TAQ issue
-TAQmaster.CUSIP9 = cellstr(CUSIP(:,9));
+tmp = textscan([CUSIP(:,9),repmat(',',size(CUSIP,1),1)]','%f','Delimiter',',');
+TAQmaster.CUSIP9 = tmp{1};
 % Extract the last 3 digits, i.e. the NSCC issue:
 % NYSE 000, NYSE at issue 100
 % MKT  001, MKT  at issue 101
 % NASD 002, NASD at issue 102
-TAQmaster.NSCC   = cellstr(CUSIP(:,10:12));
+tmp = textscan([CUSIP(:,10:12),repmat(',',size(CUSIP,1),1)]','%f','Delimiter',',');
+TAQmaster.NSCC = tmp{1};
 
 % Make '00000000' 8-cusips empty
 TAQmaster.CUSIP8(strcmp(TAQmaster.CUSIP8,'00000000')) = {''};

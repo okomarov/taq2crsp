@@ -1,5 +1,19 @@
 load debugstate
-% ANALYZE How many ticker + letter in NASDAQ and MYSE and of which type
+% NSCC field values:
+%   NYSE 0, NYSE at issue 100
+%   MKT  1, MKT  at issue 101
+%   NASD 2, NASD at issue 102
+%% SYMBOL checks NASD
+
+% Symbol lengths
+symblen = cellfun('size',TAQmaster.SYMBOL,2);
+% Index NASD issues
+iNASD = ismember(TAQmaster.NSCC, [2, 102]);
+% [NO] Check if all 4-5 lengths
+unique(symblen(iNASD))
+% [NO] Does NASD means ETT or ETO?
+TAQmaster(~(TAQmaster.ETT | TAQmaster.ETO) & iNASD,:)
+unique(TAQmaster.NSCC(symblen == 4 | symblen == 5))
 
 % SYMBOLS by CUSIP
 [unCUSIP8,~,subs] = unique(TAQmaster.CUSIP8);
