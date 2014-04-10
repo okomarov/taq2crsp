@@ -79,9 +79,22 @@ LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQcodetype.csv'
 INTO TABLE hfbetas.taqcodetype character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
 (cusip,symbol,datef,icode,type);
 
-# STEP 1) create final table & copy all entries from TAQcusips
-create table final (PK int not null auto_increment, permno int, cusip char(8), ncusip char(8), namedt int,
-                    datef int, nameenddt int, symbol varchar(10), ticker varchar(10), name varchar(30),
+
+## STEP1) Consolidate CRSP stocknames into essential info, to avoid join duplications later
+create table crsp (PK int not null auto_increment, permno int, ncusip char(8), namedt int,
+                    nameenddt int, ticker varchar(10), comnam varchar(40),
+                    primary key (PK) KEY_BLOCK_SIZE=8,
+				    KEY `crsp_ncusip` 	 (`cusip`),
+					KEY `crsp_namedt` 	 (`namedt`),
+					KEY `crsp_nameenddt` (`nameenddt`),
+					KEY `crsp_ticker` 	 (`ticker`),
+					KEY `crsp_comnam` 	 (`comnam`))
+engine=InnoDB;
+# copy all taqcusips to final
+INSERT INTO final (`cusip`, `datef`, `symbol`, `name`)
+select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
+	from taqcusips taq;
+
 # Create final table & copy all entries from TAQcusips
 create table final (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
 					name varchar(30), datef int, 
@@ -161,6 +174,14 @@ select symbol
 	having count(*) > 1;
 
 # Check type of matches
+# NOTE: rethink approach. We have same cusip with multiple SYMBOLS per date, traded on several exchanges. 
+# We might want to do dateranges by CUSIP and SYMBOL.
+# Example is:
+select * 
+	from taqcusips
+	where cusip = '00081T10'
+	order by datef;
+	
 select count(*) # cusip and date
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
@@ -252,6 +273,7 @@ select *
 	group by cusip, datef
 	having count(*) > 1
 	order by cusip, datef;
+
 ## OLD:
 
 /*
