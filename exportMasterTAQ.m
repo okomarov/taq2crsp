@@ -116,3 +116,26 @@ export(TAQcodetype,'file',fullfile(d,'TAQcodetype.csv'),'Delim','\t') % Remember
 delete(list{:})
 delete(list2{:})
 toc
+%% Import tclink
+addpath .\utils\
+d          = '.\data';
+list       = unzip(fullfile(d,'raw','WRDStclink.csv.zip'),d);
+fid        = fopen(list{:});
+varnames   = textscan(fid,'%s %s %s %s %s',1,'delimiter',',','CollectOutput',true);
+varnames   = varnames{:};
+WRDStclink = textscan(fid,'"%f" %q %q %q "%f" %*[^\n]','Delimiter',',','Headerlines',1);
+fclose(fid);
+WRDStclink = dataset({WRDStclink{1}, varnames{1}},...
+                     {WRDStclink{2}, varnames{2}},...
+                     {WRDStclink{3}, varnames{3}},...
+                     {WRDStclink{4}, varnames{4}},...
+                     {WRDStclink{5}, varnames{5}});
+WRDStclink = replacedata(WRDStclink, @(x) serial2yyyymmdd(datenum(x,'yyyy-mm-dd')),'DATE');
+% Consolidate dates
+WRDStclink = sortrows(WRDStclink,{'PERMNO','CUSIP','DATE','SYMBOL'});
+idx        =  [true; ~(        WRDStclink.PERMNO(2:end) == WRDStclink.PERMNO(1:end-1) &...
+                       strcmpi(WRDStclink.CUSIP (2:end), WRDStclink.CUSIP(1:end-1)) &...
+                       strcmpi(WRDStclink.SYMBOL(2:end), WRDStclink.SYMBOL(1:end-1)))];
+WRDStclink = WRDStclink(idx,:);
+export(WRDStclink,'file',fullfile(d,'WRDStclink.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
+delete(list{:})
