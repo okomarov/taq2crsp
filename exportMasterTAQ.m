@@ -56,11 +56,22 @@ TAQmaster = cat(1,TAQmaster{:});
 % [un,~,subs] = unique(prob(:,{'SYMBOL','NAME','CUSIP'}));
 % un.FDATE = accumarray(subs, prob.FDATE,[],@min);
 
-% Extract the 8-CUSIP
-TAQmaster.CUSIP = regexp(TAQmaster.CUSIP,'\w*(?=\d{4}$)','match','once');
+% Extract CUSIP info. CUSIP lengths can be 12 (full), 0 (absent) and 9 (missing NSCC issue digits)
+CUSIP = char(TAQmaster.CUSIP);
+% Extract 8-CUSIP
+TAQmaster.CUSIP8 = cellstr(CUSIP(:,1:8));
+% Extract the 9th digit/character, i.e. 3rd of the TAQ issue
+TAQmaster.CUSIP9 = cellstr(CUSIP(:,9));
+% Extract the last 3 digits, i.e. the NSCC issue:
+% NYSE 000, NYSE at issue 100
+% MKT  001, MKT  at issue 101
+% NASD 002, NASD at issue 102
+TAQmaster.NSCC   = cellstr(CUSIP(:,10:12));
 
 % Make '00000000' 8-cusips empty
-TAQmaster.CUSIP(strcmp(TAQmaster.CUSIP,'00000000')) = {''};
+TAQmaster.CUSIP8(strcmp(TAQmaster.CUSIP8,'00000000')) = {''};
+
+%% Continue form here
 
 % Export symbols only, necessary for cleanest match with CRSP cusip 
 % --------------
