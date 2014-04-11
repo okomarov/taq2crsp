@@ -1,7 +1,11 @@
 ﻿## TAQ & CRSP cusip merge scripts ##
 
-# Prepare tables for import CRSP
+#---------------------------------------------------------------------------------------------------
+# IMPORT DATA
+#---------------------------------------------------------------------------------------------------
 SET GLOBAL innodb_file_per_table=1;
+
+# crsp_stocknames
 CREATE TABLE `crsp_stocknames` (
   `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `permno` int(10) DEFAULT NULL,
@@ -29,6 +33,10 @@ CREATE TABLE `crsp_stocknames` (
   KEY `stocknames_nameenddt` (`nameenddt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPstocknames.csv'
+INTO TABLE hfbetas.crsp_stocknames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
+(permno,permco,namedt,nameenddt,cusip,ncusip,ticker,comnam,hexcd,exchcd,siccd,shrcd,shrcls,st_date,end_date,namedum);
+
 # TAQ symbols only
 SET GLOBAL innodb_file_per_table=1;
 CREATE TABLE `taqcusips` (
@@ -42,6 +50,10 @@ CREATE TABLE `taqcusips` (
   KEY `taqcusips_cusip` (`cusip`),
   KEY `taqcusips_datef` (`datef`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQsymbols.tab'
+INTO TABLE hfbetas.taqcusips character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
+(cusip,symbol,name,datef);
 
 # TAQ code and type
 SET GLOBAL innodb_file_per_table=1;
@@ -58,44 +70,32 @@ CREATE TABLE `taqcodetype` (
   KEY `taqcodetype_datef` (`datef`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-## Load CRSP stocknames
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPstocknames.csv'
-INTO TABLE hfbetas.crsp_stocknames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
-(permno,permco,namedt,nameenddt,cusip,ncusip,ticker,comnam,hexcd,exchcd,siccd,shrcd,shrcls,st_date,end_date,namedum);
-
-## Load TAQ master files
-# full data
-# LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQmasterfiles.csv'
-# INTO TABLE hfbetas.taq_master character set utf8 FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES
-# (symbol,name,cusip,etxn,etxa,etxb,etxp,etxx,etxt,etxo,etxw,its,icode,denom,type,datef);
-
-# barebone master files
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQsymbols.csv'
-INTO TABLE hfbetas.taqcusips character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
-(cusip,symbol,name,datef);
-
-## Load TAQ code and type
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQcodetype.csv'
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQcodetype.tab'
 INTO TABLE hfbetas.taqcodetype character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
 (cusip,symbol,datef,icode,type);
 
+#---------------------------------------------------------------------------------------------------
+# POST-IMPORT PROCESSING
+#---------------------------------------------------------------------------------------------------
 
+/*
 ## STEP1) Consolidate CRSP stocknames into essential info, to avoid join duplications later
 create table crsp (PK int not null auto_increment, permno int, ncusip char(8), namedt int,
                     nameenddt int, ticker varchar(10), comnam varchar(40),
                     primary key (PK) KEY_BLOCK_SIZE=8,
-				    KEY `crsp_ncusip` 	 (`cusip`),
+				    KEY `crsp_ncusip` 	 (`ncusip`),
 					KEY `crsp_namedt` 	 (`namedt`),
 					KEY `crsp_nameenddt` (`nameenddt`),
 					KEY `crsp_ticker` 	 (`ticker`),
 					KEY `crsp_comnam` 	 (`comnam`))
 engine=InnoDB;
 # copy all taqcusips to final
-INSERT INTO final (`cusip`, `datef`, `symbol`, `name`)
-select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
-	from taqcusips taq;
+INSERT INTO crsp (`permno`, `ncusip`, `namedt`, `nameenddt`,`ticker`,`comnam`)
+select distinct `permno`, `ncusip`, `namedt`, `nameenddt`,`ticker`,`comnam`
+	from crsp_stocknames;
+*/
 
-# Create final table & copy all entries from TAQcusips
+# Create final table & copy all entries from TAQcusips, i.e. it's the target set 
 create table final (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
 					name varchar(30), datef int, 
                     primary key (PK) KEY_BLOCK_SIZE=8,
@@ -105,13 +105,13 @@ create table final (PK int not null auto_increment, ID int, permno int, cusip ch
 					KEY `final_symbol` (`symbol`),
 					KEY `final_name` (`name`))				
 engine=InnoDB;
-# copy all taqcusips to final
+
 INSERT INTO final (`cusip`, `datef`, `symbol`, `name`)
 select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
 	from taqcusips taq;
   
 
-# Check uniqueness of entries in final 
+# Check uniqueness of entries in final [should give one count]
 select count(*) # distinct count
 	from (select distinct cusip, datef, symbol, name 
 			from taqcusips) A
@@ -124,34 +124,49 @@ union # simple count
 select count(*)
 	from taqcusips;
 
-# Redundancy check 
+# Redundancy check [should be empty]
 select *
 	from taqcusips
 	group by cusip, datef, symbol, name
 	having count(*) > 1;
 
-# STEP 2) merge with crsp data
+#---------------------------------------------------------------------------------------------------
+# MAP CRSP TO TAQ
+#---------------------------------------------------------------------------------------------------
 
-# a) on cusips
-# Counts of simple cusip to ncusip. 
-select count(*)
+# 1) ON CUSIPS
+#--------------
+
+# CUSIP join counts for tclink comparison (they don't impose datef condition)
+
+# Since TAQ fdate might be < namedt by a few days and I would lose the match, I also try
+# the [st_date, end_date], but cannot use it alone because st_date can be > namedt (see C) below).
+# Therefore, I try the min of the two ranges.
+# NOTE: I count distinct primary key rows, since in the simple cusip = ncusip join 
+#       the fdate crossjoins each namedate range (even for entries out of range, but same cusip).
+
+select count(distinct f.pk) # A) cusip = ncusip. 
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 union
-select count(*)
+select count(*) # B) cusip = ncusip and datef in [namedt, nameenddt]; no crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
-			AND (f.datef BETWEEN q.namedt and q.nameenddt);
+			AND (f.datef BETWEEN q.namedt and q.nameenddt)
+union
+select count(distinct f.pk) # C) cusip = ncusip and datef in [st_date, end_date]; has crossjoin
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (f.datef BETWEEN q.st_date and q.end_date)
+union
+select count(distinct f.pk) # D) cusip = ncusip and min of date ranges; no crossjoin
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt));
 
-# Big difference, but only 2232 records are not matched by the more stringent condition with dates.
-# In fact, the difference in counts comes mostly from duplication in the simple cusip = ncusip. Basically,
-# the fdate crossjoins each namedate range.
-select count(distinct f.pk)
-	from final f join crsp_stocknames q on f.cusip = q.ncusip;
-
-# TAQ fdate might be outside the [namedt - nameenddt] range. In this case we lose the match. 
-# Also, cannot use [st_date, end_date] because it might be a smaller range than the namedate one.
-select count(distinct l.pk)
+# Setdiff of A) vs B) for inspection and count check
+#select count(distinct l.pk)
+select L.*
 	# Simple cusip = ncusip join ...
 	from (select f.pk, f.permno, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, q.ticker, f.name
 			from final f 
@@ -165,6 +180,8 @@ select count(distinct l.pk)
 		on L.PK = R.PK 
 	where R.PK is null
 	order by L.ncusip;
+
+# Do D) vs B)
 
 # Recover matches avoiding duplication by joining on fdate's month and year within namedate's month and year 
 # Some sort of vintage date as in WRDS
@@ -182,6 +199,8 @@ select *
 	where cusip = '00081T10'
 	order by datef;
 	
+
+# Move this up
 select count(*) # cusip and date
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
@@ -263,7 +282,7 @@ select f.*
 */
 
 
-# Issue: same cusip and date, different symbols
+# ISSUE: same cusip and date, different symbols
 # EXPLANATION: some symbols might e.g. be traded on a set of different exchanges
 # When creating time-invariant ID, need to consider PERMNO with SYMBOL
 select * 
@@ -302,6 +321,11 @@ KEY `taq_master_cusip` (`cusip`),
 KEY `taq_master_datef` (`datef`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 */
+## Load TAQ master files
+# full data
+# LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQmasterfiles.csv'
+# INTO TABLE hfbetas.taq_master character set utf8 FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES
+# (symbol,name,cusip,etxn,etxa,etxb,etxp,etxx,etxt,etxo,etxw,its,icode,denom,type,datef);
 
 
 /* # IGNORE FOR NOW
