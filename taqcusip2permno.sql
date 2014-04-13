@@ -145,24 +145,46 @@ select *
 # NOTE: I count distinct primary key rows, since in the simple cusip = ncusip join 
 #       the fdate crossjoins each namedate range (even for entries out of range, but same cusip).
 
-select count(distinct f.pk) # A) cusip = ncusip. 
+select 'A) cusip = ncusip' description, count(distinct f.pk) counts # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 union
-select count(*) # B) cusip = ncusip and datef in [namedt, nameenddt]; no crossjoin
+select 'B) A + datef in [namedt, nameenddt]', count(*) # no crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (f.datef BETWEEN q.namedt and q.nameenddt)
 union
-select count(distinct f.pk) # C) cusip = ncusip and datef in [st_date, end_date]; has crossjoin
+select 'C) A + datef in [st_date, end_date]', count(distinct f.pk) counts # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (f.datef BETWEEN q.st_date and q.end_date)
 union
-select count(distinct f.pk) # D) cusip = ncusip and min of date ranges; no crossjoin
+select 'D) A + min/max of date ranges', count(distinct f.pk) # no crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
-			AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt));
+			AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
+union
+select 'E) B with yy/mm dates',count(distinct f.pk) # has crossjoins
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip
+			AND (extract(year_month from f.datef) 
+				BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
+union
+select 'F) B + symbol = ticker', count(*) # no crossjoin
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
+			AND (f.datef BETWEEN q.namedt and q.nameenddt)
+union
+select 'G) F with yy/mm dates', count(distinct f.pk) # has crossjoin
+	from final f 
+		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
+			AND (extract(year_month from f.datef) 
+                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt));
+
+# Course of action:
+# - [skip, go with B directly] Check which cases have st_date < namedt (by permno?) or end_date > nameenddt and then decide if to widen the date range. Do D) vs B) ?
+# - Do match by B or (C,D) and THEN apply yy/mm datef match to unmatched, so that matches belonging to intra-month datef < nameenddt don't expand also to next range.
+# - Leave the symbol out, since the join should be a proper subset of B and I can't think on ways it could improve on B.
 
 # Setdiff of A) vs B) for inspection and count check
 #select count(distinct l.pk)
@@ -181,8 +203,6 @@ select L.*
 	where R.PK is null
 	order by L.ncusip;
 
-# Do D) vs B)
-
 # Recover matches avoiding duplication by joining on fdate's month and year within namedate's month and year 
 # Some sort of vintage date as in WRDS
 select symbol
@@ -199,30 +219,6 @@ select *
 	where cusip = '00081T10'
 	order by datef;
 	
-
-# Move this up
-select count(*) # cusip and date
-	from final f 
-		join crsp_stocknames q on f.cusip = q.ncusip
-			AND (f.datef BETWEEN q.namedt and q.nameenddt)
-union
-select count(*) # cusip and month
-	from final f 
-		join crsp_stocknames q on f.cusip = q.ncusip
-			AND (extract(year_month from f.datef) 
-                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
-union
-select count(*) # cusip, symbol and date
-	from final f 
-		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
-			AND (f.datef BETWEEN q.namedt and q.nameenddt)
-union
-select count(*) # cusip, symbol and month
-	from final f 
-		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
-			AND (extract(year_month from f.datef) 
-                 BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt));
-
 
 # Check duplication in cusip and month
 select count(*) from(
