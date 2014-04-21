@@ -97,7 +97,7 @@ select distinct `permno`, `ncusip`, `namedt`, `nameenddt`,`ticker`,`comnam`
 
 # Create final table & copy all entries from TAQcusips, i.e. it's the target set 
 create table final (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
-					name varchar(30), datef int, 
+					name varchar(30), datef int, score tinyint, 
                     primary key (PK) KEY_BLOCK_SIZE=8,
 				    KEY `final_ID` (`ID`),
 					KEY `final_cusip` (`cusip`),
@@ -145,80 +145,176 @@ select *
 # NOTE: I count distinct primary key rows, since in the simple cusip = ncusip join 
 #       the fdate crossjoins each namedate range (even for entries out of range, but same cusip).
 
-select 'A) cusip = ncusip' description, count(distinct f.pk) counts # has crossjoin
+select 'A) cusip = ncusip' description, count(distinct f.pk) counts, count(distinct f.pk)/max(f.pk)*100 Perc # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 union
-select 'B) A + datef in [namedt, nameenddt]', count(*) # no crossjoin
+select 'B) A + datef in [namedt, nameenddt]', count(*), count(*)/max(f.pk)*100 # no crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (f.datef BETWEEN q.namedt and q.nameenddt)
 union
-select 'C) A + datef in [st_date, end_date]', count(distinct f.pk) counts # has crossjoin
+select 'C) A + datef in [st_date, end_date]', count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100 # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (f.datef BETWEEN q.st_date and q.end_date)
 union
-select 'D) A + min/max of date ranges', count(distinct f.pk) # no crossjoin
+select 'D) A + min/max of date ranges', count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100  # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
 union
-select 'E) B with yy/mm dates',count(distinct f.pk) # has crossjoins
+select 'E) B with yy/mm dates',count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100  # has crossjoins
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip
 			AND (extract(year_month from f.datef) 
 				BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
 union
-select 'F) B + symbol = ticker', count(*) # no crossjoin
+select 'F) B + symbol = ticker', count(*),count(*)/max(f.pk)*100  # no crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
 			AND (f.datef BETWEEN q.namedt and q.nameenddt)
 union
-select 'G) F with yy/mm dates', count(distinct f.pk) # has crossjoin
+select 'G) F with yy/mm dates', count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100  # has crossjoin
 	from final f 
 		join crsp_stocknames q on f.cusip = q.ncusip AND f.symbol = q.ticker
 			AND (extract(year_month from f.datef) 
                  BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt));
 
 # Course of action:
-# - [skip, go with B directly] Check which cases have st_date < namedt (by permno?) or end_date > nameenddt and then decide if to widen the date range. Do D) vs B) ?
-# - Do match by B or (C,D) and THEN apply yy/mm datef match to unmatched, so that matches belonging to intra-month datef < nameenddt don't expand also to next range.
+# - [skipping] Check which cases have st_date < namedt (by permno?) or end_date > nameenddt and then decide if to widen the date range.
 # - Leave the symbol out, since the join should be a proper subset of B and I can't think on ways it could improve on B.
 
-# Setdiff of A) vs B) for inspection and count check
+# Setdiff of A) vs B) for inspection and count check - A matches all B
+#select count(distinct l.pk)
+select L.*
+	# cusip = ncusip join and min/max of date ranges ...
+	from (select f.pk, f.permno, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, q.ticker, f.name
+			FROM final f JOIN crsp_stocknames q ON f.cusip = q.ncusip) L 
+		# ...against cusip=ncusip and date condition
+		left join
+		# right join
+			(select f.pk, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, f.name
+				FROM final f JOIN crsp_stocknames q ON f.cusip = q.ncusip AND f.datef BETWEEN q.namedt and q.nameenddt) R
+		on L.PK = R.PK 
+	where R.PK is null
+	#where L.PK is null
+	order by L.ncusip;
+
+# Setdiff of D) vs B) for inspection and count check - D matches all B
 #select count(distinct l.pk)
 select L.*
 	# Simple cusip = ncusip join ...
 	from (select f.pk, f.permno, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, q.ticker, f.name
-			from final f 
-				join crsp_stocknames q 
-				on f.cusip = q.ncusip) L 
+			FROM final f JOIN crsp_stocknames q ON f.cusip = q.ncusip AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))) L 
 		# ...against cusip=ncusip and date condition
-		left join (select f.pk, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, f.name
-					  from final f 
-						 join crsp_stocknames q 
-						 on f.cusip = q.ncusip AND f.datef BETWEEN q.namedt and q.nameenddt) R
+		left join
+		# right join 
+			(select f.pk, f.cusip, q.ncusip, q.namedt, f.datef, q.nameenddt, f.symbol, f.name
+				FROM final f JOIN crsp_stocknames q ON f.cusip = q.ncusip AND f.datef BETWEEN q.namedt and q.nameenddt) R
 		on L.PK = R.PK 
 	where R.PK is null
+	#where L.PK is null
 	order by L.ncusip;
 
-# Recover matches avoiding duplication by joining on fdate's month and year within namedate's month and year 
-# Some sort of vintage date as in WRDS
-select symbol
-	from taqcusips
-	group by symbol, cusip, month(datef), year(datef)
-	having count(*) > 1;
+set @cusip = '02263A10';
+select *, '' from taqcusips where cusip = @cusip
+union
+select distinct PK, ncusip, ticker, comnam, namedt, nameenddt from crsp_stocknames where ncusip = @cusip;
+select * from crsp_stocknames where ncusip = @cusip;
+select distinct PK, ncusip, ticker, comnam, namedt, nameenddt from crsp_stocknames where permno = 10401;
 
-# Check type of matches
-# NOTE: rethink approach. We have same cusip with multiple SYMBOLS per date, traded on several exchanges. 
-# We might want to do dateranges by CUSIP and SYMBOL.
-# Example is:
-select * 
-	from taqcusips
-	where cusip = '00081T10'
-	order by datef;
-	
+# SCORE: 10; Match D) CUSIP = NCUSIP + DATEF within min/max of date ranges (name or data)
+UPDATE final ff,  
+	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
+		from final f 
+			join crsp_stocknames q 
+			on f.cusip = q.ncusip AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
+	) qq
+SET ff.permno = qq.permno, ff.score = 10
+WHERE ff.cusip = qq.cusip AND ff.datef = qq.datef AND ff.symbol = qq.symbol;
+
+# Cusips that have a match but not on all date ranges (count 774 cusips, 870 records)
+#select count(distinct f.pk) #count(distinct f.cusip)  
+select f.*
+	from final f 
+		join (select cusip
+				from final
+				group by cusip
+				having  sum(isnull(score)) > 0 and sum(not isnull(score)) > 0) q 
+		on f.cusip = q.cusip
+	#where score is null
+	order by f.cusip, f.datef;
+
+# SCORE 11: propagate permno for matched cusips also on non-matched date ranges
+UPDATE final f,  
+	(select distinct cusip, permno from final where score = 10) q 
+SET f.permno = q.permno, f.score = 11
+WHERE f.cusip = q.cusip AND f.permno is null;
+
+# Check how D) + propagation is different from E), i.e. the yy/mm datef match to unmatched, 
+# [doing d), propagation and then only mm/yy date match, so that matches belonging to intra-month datef < nameenddt don't expand also to next range]
+
+# 2) ON SYMBOL
+#-------------
+
+# Simple symbol to ticker match might be incorrect because different companies might 
+# re-use the ticker at different points in time. 
+# Matching the residual entries (no permno).
+
+select 'A) symbol = ticker' description, count(distinct f.pk) counts, count(distinct f.pk)/max(f.pk)*100 Perc # has crossjoin
+	from (select * from final where permno is null) f 
+		join crsp_stocknames q on f.symbol = q.ticker
+union
+select 'B) A + datef in [namedt, nameenddt]', count(*), count(*)/max(f.pk)*100 # no crossjoin
+	from (select * from final where permno is null) f 
+		join crsp_stocknames q on f.symbol = q.ticker
+			AND (f.datef BETWEEN q.namedt and q.nameenddt)
+union
+select 'C) A + datef in [st_date, end_date]', count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100 # has crossjoin
+	from (select * from final where permno is null) f 
+		join crsp_stocknames q on f.symbol = q.ticker
+			AND (f.datef BETWEEN q.st_date and q.end_date)
+union
+select 'D) A + min/max of date ranges', count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100  # has crossjoin
+	from (select * from final where permno is null) f 
+		join crsp_stocknames q on f.symbol = q.ticker
+			AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
+union
+select 'E) B with yy/mm dates',count(distinct f.pk), count(distinct f.pk)/max(f.pk)*100  # has crossjoins
+	from (select * from final where permno is null) f 
+		join crsp_stocknames q on f.symbol = q.ticker
+			AND (extract(year_month from f.datef) 
+				BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt));
+
+# SCORE: 20; Match D) SYMBOL = TICKER + DATEF within min/max of date ranges (name or data)
+UPDATE final ff,  
+	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
+		from (select * from final where permno is null) f 
+			join crsp_stocknames q 
+			on f.symbol = q.ticker AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
+	) qq
+SET ff.permno = qq.permno, ff.score = 20
+WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
+
+# Cannot propagate because symbol is re-used. Use cusip for the mathced symbol and check if there propagation that canbe explouited
+select * from final
+	where score = 20 and cusip is not null;
+
+select count(1), count(score), count(score)*100/count(1) from final;
+
+# PROBLEM: We have same cusip with multiple SYMBOLS per date. 
+select * from taqcusips where cusip = '00081T10' order by datef;
+# PROBLEM: wrong cusip in TAQ?
+select *, '' from taqcusips where cusip in  ('00123020','00123010')
+union
+select distinct PK, ncusip, ticker, comnam, namedt, nameenddt from crsp_stocknames where ncusip in  ('00123020','00123010');
+# PROBLEM: match doesn't propagate (would need to check how long prices go) - support widening range to min max
+set @cusip = '00141J10';
+select *, '' from taqcusips where cusip = @cusip
+union
+select distinct PK, ncusip, ticker, comnam, namedt, nameenddt from crsp_stocknames where ncusip = @cusip;
+select * from crsp_stocknames where ncusip = @cusip;
 
 # Check duplication in cusip and month
 select count(*) from(
@@ -229,16 +325,14 @@ select f.pk, q.permno, f.cusip, q.ncusip, min(q.namedt) namedt, f.datef, max(q.n
                  BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
 	#where f.pk = 4291
 	group by q.permno, f.cusip, f.datef, q.ncusip ) F
-	having count(*) > 1
+	having count(*) > 1;
 
 select * from taqcusips where cusip in (select distinct cusip from taqcusips where symbol ='ABD');
 select * from taqcusips where cusip in('00081T10');
 select * from taqcusips where symbol ='AAG';
 
-UPDATE final f, crsp_stocknames q
-SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
-WHERE f.cusip=q.ncusip AND (f.datef BETWEEN q.namedt and q.nameenddt);
 
+/*
 # b) on symbols
 UPDATE final f,  crsp_stocknames q
 SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
@@ -252,7 +346,7 @@ select f.*
 SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
 where f.symbol = q.symbol and f.name = q.name and f.datef = q.datef;
 
-/*
+
 # c) on similar cymbols and company
 explain UPDATE final f, crsp_stocknames q
 SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
@@ -277,116 +371,8 @@ select f.*
 
 */
 
-
-# ISSUE: same cusip and date, different symbols
-# EXPLANATION: some symbols might e.g. be traded on a set of different exchanges
-# When creating time-invariant ID, need to consider PERMNO with SYMBOL
-select * 
-	from (select distinct cusip, symbol, datef
-			from taqcusips
-			where cusip is not null) A
-	group by cusip, datef
-	having count(*) > 1
-	order by cusip, datef;
-
-## OLD:
-
-/*
-# TAQ master
-CREATE TABLE `taq_master` (
-`PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
-`symbol` varchar(10) DEFAULT NULL,
-`name` varchar(30) DEFAULT NULL,
-`cusip` varchar(8) DEFAULT NULL,
-`etxn` tinyint(1) DEFAULT NULL,
-`etxa` tinyint(1) DEFAULT NULL,
-`etxb` tinyint(1) DEFAULT NULL,
-`etxp` tinyint(1) DEFAULT NULL,
-`etxx` tinyint(1) DEFAULT NULL,
-`etxt` tinyint(1) DEFAULT NULL,
-`etxo` tinyint(1) DEFAULT NULL,
-`etxw` tinyint(1) DEFAULT NULL,
-`its` tinyint(1) DEFAULT NULL,
-`icode` char(4) DEFAULT NULL,
-`denom` char(1) DEFAULT NULL,
-`type` tinyint(3) unsigned DEFAULT NULL,
-`datef` int(10) unsigned DEFAULT NULL,
-PRIMARY KEY (`PK`) KEY_BLOCK_SIZE=8,
-UNIQUE KEY `idtaq_master_UNIQUE` (`PK`) KEY_BLOCK_SIZE=8,
-KEY `taq_master_cusip` (`cusip`),
-KEY `taq_master_datef` (`datef`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-*/
-## Load TAQ master files
-# full data
-# LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQmasterfiles.csv'
-# INTO TABLE hfbetas.taq_master character set utf8 FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES
-# (symbol,name,cusip,etxn,etxa,etxb,etxp,etxx,etxt,etxo,etxw,its,icode,denom,type,datef);
-
-
-/* # IGNORE FOR NOW
-CREATE TABLE `crsp_permnotool` (
-`PK` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-`date` int(10) unsigned DEFAULT NULL,
-`comnam` varchar(40) DEFAULT NULL,
-`ncusip` char(8) DEFAULT NULL,
-`ticker` varchar(10) DEFAULT NULL,
-`permno` int(10) unsigned DEFAULT NULL,
-PRIMARY KEY `PRIMARY` (`PK`),
-UNIQUE KEY `PK_UNIQUE` (`PK`)
-) ENGINE=InnoDB;
-# Load CRSP webtool permno
-LOAD DATA LOCAL INFILE 'C:\\HFbetas\\data\\CRSP\\webtool_permno.csv'
-INTO TABLE hfbetas.crsp_permnotool character set utf8 FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' IGNORE 1 LINES
-(DATE, COMNAM, NCUSIP, TICKER, PERMNO);
-*/
-
-
-# CHECK - TAQ cusips that have a match in ncusip BUT not for all dates
-# select R.*
-# from
-# (SELECT cusip
-# FROM final
-# group by cusip
-# having sum(ncusip is null) < count(*) AND sum(ncusip is null) > 1) doubles
-# inner join final R on doubles.cusip = R.cusip
-# order by doubles.cusip;
-
-# CHECK - counts [OK]
-# --------------------------------------------------------
-/*
-SELECT count(*) tot, sum(case when isnull(cusip) then 1 else 0 end) nulls, sum(case when isnull(cusip) then 0 else 1 end) notnulls
-FROM taqcusips;
-select count(*) from final;
-*/
-
-# CHECK - back and forth of tickers in time for same cusip
-# --------------------------------------------------------
-/*
-select distinct L.cusip, R.symbol, L.symbol, R.mindt, L.datef, R.maxdt
-from taqcusips L
-inner join
-(select cusip, symbol, min(datef) mindt, max(datef) maxdt
-from taqcusips
-where cusip is not null
-group by cusip, symbol) R
-on L.cusip = R.cusip and L.symbol != R.symbol and L.datef >= R.mindt and L.datef < R.maxdt
-order by L.cusip, R.mindt;
-
-# Example
-select * from final
-where cusip = '00088E10'
-order by datef;
-
-select * from crsp_stocknames
-where cusip = '00088E10'
-order by namedt;
-*/
-
 # size of tables
 SELECT TABLE_NAME, table_rows, data_length, index_length, round(((data_length + index_length) / 1024 / 1024),2) 'Size in MB'
 FROM information_schema.TABLES
 WHERE table_schema = 'hfbetas' and TABLE_TYPE='BASE TABLE'
 ORDER BY data_length DESC;
-
-#SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'hfbetas' AND TABLE_NAME = 'taq_master';
