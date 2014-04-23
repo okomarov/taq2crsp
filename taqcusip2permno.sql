@@ -78,23 +78,6 @@ INTO TABLE hfbetas.taqcodetype character set utf8 FIELDS TERMINATED BY '\t' LINE
 # POST-IMPORT PROCESSING
 #---------------------------------------------------------------------------------------------------
 
-/*
-## STEP1) Consolidate CRSP stocknames into essential info, to avoid join duplications later
-create table crsp (PK int not null auto_increment, permno int, ncusip char(8), namedt int,
-                    nameenddt int, ticker varchar(10), comnam varchar(40),
-                    primary key (PK) KEY_BLOCK_SIZE=8,
-				    KEY `crsp_ncusip` 	 (`ncusip`),
-					KEY `crsp_namedt` 	 (`namedt`),
-					KEY `crsp_nameenddt` (`nameenddt`),
-					KEY `crsp_ticker` 	 (`ticker`),
-					KEY `crsp_comnam` 	 (`comnam`))
-engine=InnoDB;
-# copy all taqcusips to final
-INSERT INTO crsp (`permno`, `ncusip`, `namedt`, `nameenddt`,`ticker`,`comnam`)
-select distinct `permno`, `ncusip`, `namedt`, `nameenddt`,`ticker`,`comnam`
-	from crsp_stocknames;
-*/
-
 # Create final table & copy all entries from TAQcusips, i.e. it's the target set 
 create table final (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
 					name varchar(30), datef int, score tinyint, 
@@ -245,7 +228,7 @@ select f.*
 	#where score is null
 	order by f.cusip, f.datef;
 
-# SCORE 11: propagate permno for matched cusips also on non-matched date ranges
+# SCORE: 11; propagate permno for matched cusips also on non-matched date ranges
 UPDATE final f,  
 	(select distinct cusip, permno from final where score = 10) q 
 SET f.permno = q.permno, f.score = 11
@@ -319,6 +302,151 @@ select score, count(*), count(score)*100/count(*)
 	from final
 	group by score with rollup;
 
+#---------------------------------------------------------------------------------------------------
+# COMPARE AGAINST MM/YY MATCHES, i.e. E)
+#---------------------------------------------------------------------------------------------------
+
+# Looks like vintage date avoids some erroneous matches, but need to check why fails in a specific case below
+
+# Create final table & copy all entries from TAQcusips, i.e. it's the target set 
+create table final3 (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
+					name varchar(30), datef int, score tinyint, 
+                    primary key (PK) KEY_BLOCK_SIZE=8,
+				    KEY `final_ID` (`ID`),
+					KEY `final_cusip` (`cusip`),
+					KEY `final_datef` (`datef`),
+					KEY `final_symbol` (`symbol`),
+					KEY `final_name` (`name`))				
+engine=InnoDB;
+
+INSERT INTO final3 (`cusip`, `datef`, `symbol`, `name`)
+select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
+	from taqcusips taq;
+
+# CUSIP
+UPDATE final3 ff,  
+	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
+		from final3 f 
+			join crsp_stocknames q 
+			on f.cusip = q.ncusip AND 
+				(extract(year_month from f.datef) BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
+	) qq
+SET ff.permno = qq.permno, ff.score = 10
+WHERE ff.cusip = qq.cusip AND ff.datef = qq.datef AND ff.symbol = qq.symbol;
+# Propagate
+UPDATE final3 f,  
+	(select distinct cusip, permno from final3 where score = 10) q 
+SET f.permno = q.permno, f.score = 11
+WHERE f.cusip = q.cusip AND f.permno is null;
+
+# SYMBOL
+UPDATE final3 ff,  
+	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
+		from (select * from final3 where permno is null) f 
+			join crsp_stocknames q 
+			on f.symbol = q.ticker AND (extract(year_month from f.datef) BETWEEN extract(year_month from q.namedt) and extract(year_month from q.nameenddt))
+	) qq
+SET ff.permno = qq.permno, ff.score = 20
+WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
+# Propagate
+UPDATE final3 f,  
+	(select distinct cusip, permno from final3 where score = 20) q 
+SET f.permno = q.permno, f.score = 21
+WHERE f.cusip = q.cusip AND f.permno is null;
+
+
+# Take difference 
+select * 
+	from final3 f3 
+		join final f on f3.pk = f.pk
+	where f3.permno <> f.permno;
+
+select *
+	from final3 f3 
+		join final f on f3.pk = f.pk
+	where f3.permno is not null and f.permno is null;
+
+select *
+	from final3 f3 
+		join final f on f3.pk = f.pk
+	where f3.permno is  null and f.permno is not null;	
+
+select * from crsp_stocknames where permno = 80170
+
+# Check this match!
+select * 
+	from crsp_stocknames
+	where permno in (79701, 86345);
+
+select score, count(*), count(score)*100/count(*)
+	from final3
+	group by score with rollup;
+
+#---------------------------------------------------------------------------------------------------
+# COMPARE AGAINST INTIAL APPROACH
+#---------------------------------------------------------------------------------------------------
+
+# STEP 1) create final table & copy all entries from TAQcusips
+create table final2 (PK int not null auto_increment, permno int, cusip char(8), ncusip char(8), namedt int,
+                    datef int, nameenddt int, symbol varchar(10), ticker varchar(10), name varchar(30),
+                    primary key (PK) KEY_BLOCK_SIZE=8,
+				    KEY `final_cusip` (`cusip`),
+					KEY `final_datef` (`datef`),
+					KEY `final_symbol` (`symbol`),
+					KEY `final_name` (`name`))
+					
+engine=InnoDB;
+
+# copy all taqcusips to final
+INSERT INTO final2 (`cusip`, `datef`, `symbol`, `name`)
+select taq.cusip, taq.datef, taq.symbol, taq.name 
+	from taqcusips taq;
+  
+# STEP 2) merge with crsp data
+# a) on cusips
+UPDATE final2 f, crsp_stocknames q
+SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
+WHERE f.cusip=q.ncusip AND (f.datef BETWEEN q.namedt and q.nameenddt);
+
+# b) on symbols
+UPDATE final2 f,  crsp_stocknames q
+SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
+WHERE f.ncusip IS NULL AND f.symbol=q.ticker AND (f.datef BETWEEN q.namedt and q.nameenddt);
+
+/*
+select f.* 
+		from final f 
+			inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
+				AND (f.datef BETWEEN q.namedt and q.nameenddt)
+		WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null) q
+SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
+where f.symbol = q.symbol and f.name = q.name and f.datef = q.datef;
+
+# c) on similar cymbols and company
+explain UPDATE final f, crsp_stocknames q
+SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
+WHERE f.ncusip is null AND f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
+AND (f.datef BETWEEN q.namedt and q.nameenddt);
+
+explain UPDATE final f, 
+	(select f.*, q.*
+		from final f 
+			inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
+				AND (f.datef BETWEEN q.namedt and q.nameenddt)
+		WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null) q
+SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
+where f.symbol = q.symbol and f.name = q.name and f.datef = q.datef;
+
+select f.* 
+	from final f 
+		inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
+				AND (f.datef BETWEEN q.namedt and q.nameenddt)
+	WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null
+*/
+
+#---------------------------------------------------------------------------------------------------
+# EXAMPLES OF ISSUES
+#---------------------------------------------------------------------------------------------------
 
 # PROBLEM: We have same cusip with multiple SYMBOLS per date. 
 select * from taqcusips where cusip = '00081T10' order by datef;
@@ -348,45 +476,6 @@ select * from taqcusips where cusip in (select distinct cusip from taqcusips whe
 select * from taqcusips where cusip in('00081T10');
 select * from taqcusips where symbol ='AAG';
 
-
-/*
-# b) on symbols
-UPDATE final f,  crsp_stocknames q
-SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
-WHERE f.ncusip IS NULL AND f.symbol=q.ticker AND (f.datef BETWEEN q.namedt and q.nameenddt);
-
-select f.* 
-		from final f 
-			inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
-				AND (f.datef BETWEEN q.namedt and q.nameenddt)
-		WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null) q
-SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
-where f.symbol = q.symbol and f.name = q.name and f.datef = q.datef;
-
-
-# c) on similar cymbols and company
-explain UPDATE final f, crsp_stocknames q
-SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
-WHERE f.ncusip is null AND f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
-AND (f.datef BETWEEN q.namedt and q.nameenddt);
-
-explain UPDATE final f, 
-	(select f.*, q.*
-		from final f 
-			inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
-				AND (f.datef BETWEEN q.namedt and q.nameenddt)
-		WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null) q
-SET f.permno=q.permno, f.ncusip=q.ncusip, f.namedt=q.namedt, f.nameenddt=q.nameenddt, f.ticker=q.ticker
-where f.symbol = q.symbol and f.name = q.name and f.datef = q.datef;
-
-
-select f.* 
-	from final f 
-		inner join crsp_stocknames q on f.symbol LIKE concat(q.ticker,'%') AND f.name LIKE concat(q.comnam,'%')
-				AND (f.datef BETWEEN q.namedt and q.nameenddt)
-	WHERE f.ncusip is null and q.ticker is not null and q.comnam is not null
-
-*/
 
 # size of tables
 SELECT TABLE_NAME, table_rows, data_length, index_length, round(((data_length + index_length) / 1024 / 1024),2) 'Size in MB'
