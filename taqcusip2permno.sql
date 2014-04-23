@@ -110,7 +110,6 @@ INSERT INTO final (`cusip`, `datef`, `symbol`, `name`)
 select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
 	from taqcusips taq;
   
-
 # Check uniqueness of entries in final [should give one count]
 select count(*) # distinct count
 	from (select distinct cusip, datef, symbol, name 
@@ -241,7 +240,7 @@ select f.*
 		join (select cusip
 				from final
 				group by cusip
-				having  sum(isnull(score)) > 0 and sum(not isnull(score)) > 0) q 
+				having  sum(isnull(permno)) > 0 and sum(not isnull(permno)) > 0) q 
 		on f.cusip = q.cusip
 	#where score is null
 	order by f.cusip, f.datef;
@@ -297,11 +296,29 @@ UPDATE final ff,
 SET ff.permno = qq.permno, ff.score = 20
 WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
 
-# Cannot propagate because symbol is re-used. Use cusip for the mathced symbol and check if there propagation that canbe explouited
-select * from final
-	where score = 20 and cusip is not null;
+# Cannot propagate by symbol because it can be re-used by a different company.
+# Work out the cusip for the matched symbol and propagate 
+#select count(distinct L.pk)
+select *
+	from final L 
+		join (select distinct cusip 
+				from final 
+				group by cusip 
+				having sum(isnull(permno)) > 0 and sum(not isnull(permno)) > 0) R
+		on L.cusip = R.cusip
+	# where permno is null
+	order by L.cusip, L.datef;
 
-select count(1), count(score), count(score)*100/count(1) from final;
+# SCORE: 21; propagate permno for backed-out cusips (from matched symbol) also on non-matched date ranges
+UPDATE final f,  
+	(select distinct cusip, permno from final where score = 20) q 
+SET f.permno = q.permno, f.score = 21
+WHERE f.cusip = q.cusip AND f.permno is null;
+
+select score, count(*), count(score)*100/count(*)
+	from final
+	group by score with rollup;
+
 
 # PROBLEM: We have same cusip with multiple SYMBOLS per date. 
 select * from taqcusips where cusip = '00081T10' order by datef;
