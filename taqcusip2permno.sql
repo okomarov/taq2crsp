@@ -208,13 +208,13 @@ select distinct PK, ncusip, ticker, comnam, namedt, nameenddt from crsp_stocknam
 
 # SCORE: 10; Match D) CUSIP = NCUSIP + DATEF within min/max of date ranges (name or data)
 UPDATE final ff,  
-	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
+	(select distinct q.permno, f.cusip, f.datef, f.symbol
 		from final f 
 			join crsp_stocknames q 
 			on f.cusip = q.ncusip AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
 	) qq
 SET ff.permno = qq.permno, ff.score = 10
-WHERE ff.cusip = qq.cusip AND ff.datef = qq.datef AND ff.symbol = qq.symbol;
+WHERE ff.cusip = qq.cusip AND ff.datef = qq.datef;
 
 # Cusips that have a match but not on all date ranges (count 774 cusips, 870 records)
 #select count(distinct f.pk) #count(distinct f.cusip)  
@@ -301,6 +301,73 @@ WHERE f.cusip = q.cusip AND f.permno is null;
 select score, count(*), count(score)*100/count(*)
 	from final
 	group by score with rollup;
+
+#---------------------------------------------------------------------------------------------------
+# COMPARE AGAINST NO DATE CUSIP MATCH
+#---------------------------------------------------------------------------------------------------
+# Create final table & copy all entries from TAQcusips, i.e. it's the target set 
+create table final4 (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
+					name varchar(30), datef int, score tinyint, 
+                    primary key (PK) KEY_BLOCK_SIZE=8,
+				    KEY `final_ID` (`ID`),
+					KEY `final_cusip` (`cusip`),
+					KEY `final_datef` (`datef`),
+					KEY `final_symbol` (`symbol`),
+					KEY `final_name` (`name`),
+					KEY `final_permno` (`permno`))				
+engine=InnoDB;
+
+INSERT INTO final4 (`cusip`, `datef`, `symbol`, `name`)
+select distinct taq.cusip, taq.datef, taq.symbol, taq.name 
+	from taqcusips taq;
+
+# CUSIP
+UPDATE final4 ff,  (select distinct q.permno, f.cusip
+					from final4 f 
+						join crsp_stocknames q 
+						on f.cusip = q.ncusip) qq
+SET ff.permno = qq.permno, ff.score = 10
+WHERE ff.cusip = qq.cusip;
+
+# Check against names and symbols (166 potential wrong matches)
+# In reality a levenshtein distance would be more appropriate, i.e. I expect only 10% of
+# the wrong matches to be true
+select ff.*
+	from (select f.*
+			from final4 f
+				left join (select distinct permno, ticker, comnam from crsp_stocknames) q 
+				on f.permno = q.permno and f.symbol like concat(q.ticker,'%')
+			where q.permno is null and score is not null) ff 
+		left join (select distinct permno, ticker, comnam from crsp_stocknames) qq
+		on ff.permno = qq.permno and ff.name like concat(qq.comnam,'%')
+	where qq.permno is null;
+
+set @permno = 80311;
+select distinct ncusip, ticker, comnam, namedt,nameenddt,1 a
+	from crsp_stocknames
+	where permno  = @permno
+union
+select distinct cusip, symbol, name, datef, 2,2
+	from final4
+	where permno  = @permno
+	order by a, namedt;
+
+# Compare against final (cusip match only)
+select * 
+	from final4 f4 
+		join final f on f4.pk = f.pk
+	where f4.permno <> f.permno;
+
+select * # 961 more matches
+	from final4 f4 
+		join final f on f4.pk = f.pk
+	where f4.permno is not null and f.permno is null;
+
+select * # obviously 0
+	from final4 f4 
+		join final f on f4.pk = f.pk
+	where f4.permno is  null and f.permno is not null;	
+
 
 #---------------------------------------------------------------------------------------------------
 # COMPARE AGAINST MM/YY MATCHES, i.e. E)
