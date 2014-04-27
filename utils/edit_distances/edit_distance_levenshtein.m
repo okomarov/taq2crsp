@@ -1,4 +1,4 @@
-function d=edit_distance_levenshtein(s,t)
+function d = edit_distance_levenshtein(s,t)
   % EDIT_DISTANEC_LEVENSHTEIN calculates the Levenshtein edit distance.
   %
   % This code is part of the work described in [1]. In [1], edit distances
@@ -43,31 +43,24 @@ function d=edit_distance_levenshtein(s,t)
   % are those of the authors and should not be interpreted as representing 
   % official policies, either expressed or implied, of B. Schauerte.
   
-  m=numel(s);
-  n=numel(t);
-  
-  d=zeros(m+1,n+1);
+  m = numel(s);
+  n = numel(t);
   
   % initialize distance matrix
-  for i=0:m % deletion
-    d(i+1,1)=i;
-  end
-  for j=0:n % insertion
-    d(1,j+1)=j;
-  end
+  d          = zeros(m+1,n+1);
+  d(2:end,1) = 1:m; % deletion
+  d(1,2:end) = 1:n; % insertion
   
-  for j=2:n+1
-    for i=2:m+1
-      if s(i-1) == t(j-1)
-        d(i,j)=d(i-1,j-1);
-      else
-        d(i,j)=min([ ...
-          d(i-1,j) + 1, ...  % deletion
-          d(i,j-1) + 1, ...  % insertion
-          d(i-1,j-1) + 1 ... % substitution
-          ]);
+  for c = 2:n+1
+      for r = 2:m+1
+          if s(r-1) == t(c-1)
+              d(r,c) = d(r-1,c-1);
+          else
+              d(r,c)= min([d(r-1,c) + 1, ...  % deletion
+                           d(r,c-1) + 1, ...  % insertion
+                           d(r-1,c-1) + 1]);  % substitution
+          end
       end
-    end
   end
   
-  d=d(m+1,n+1);
+  d = d(m+1,n+1);
