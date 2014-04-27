@@ -1,3 +1,11 @@
 data/
 
 *.mat
+
+# Tex bloat
+tex/*.bak
+tex/*.aux
+tex/*.log
+tex/*.out
+tex/*.gz
+
