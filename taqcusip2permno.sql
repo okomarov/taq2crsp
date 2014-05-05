@@ -37,6 +37,43 @@ LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPstocknames.csv'
 INTO TABLE hfbetas.crsp_stocknames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
 (permno,permco,namedt,nameenddt,cusip,ncusip,ticker,comnam,hexcd,exchcd,siccd,shrcd,shrcls,st_date,end_date,namedum);
 
+# crsp_msenames
+CREATE TABLE `crsp_msenames` (
+  `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `permno` int(10) DEFAULT NULL,
+  `namedt` int(11) DEFAULT NULL,
+  `nameenddt` int(11) DEFAULT NULL,
+  `shrcd` tinyint(4) DEFAULT NULL,
+  `exchcd` tinyint(4) DEFAULT NULL,
+  `siccd` smallint(5) unsigned DEFAULT NULL,
+  `ncusip` char(8) DEFAULT NULL,
+  `ticker` varchar(10) DEFAULT NULL,
+  `comnam` varchar(40) DEFAULT NULL,
+  `shrcls` char(1) DEFAULT NULL,
+  `tsymbol` varchar(10) DEFAULT NULL,
+  `naics` mediumint(7) unsigned DEFAULT NULL,
+  `primexch` char(1) NOT NULL, 
+  `trdstat` char(1) NOT NULL, 
+  `secstat` char(1) NOT NULL, 
+  `permco` int(11) DEFAULT NULL,
+  `compno` int(8) unsigned, 
+  `issuno` int(8) unsigned, 
+  `hexcd` tinyint(4) DEFAULT NULL,
+  `hsiccd` smallint(5) unsigned DEFAULT NULL,
+  `cusip` char(8) DEFAULT NULL,
+  PRIMARY KEY (`PK`),
+  UNIQUE KEY `PK_UNIQUE` (`PK`),
+  KEY `stocknames_ncusip` (`ncusip`),
+  KEY `stocknames_ticker` (`ticker`),
+  KEY `stocknames_name` (`comnam`),
+  KEY `stocknames_namedt` (`namedt`),
+  KEY `stocknames_nameenddt` (`nameenddt`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames.csv'
+INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
+(permno,namedt,nameenddt,shrcd,exchcd,siccd,ncusip,ticker,comnam,shrcls,tsymbol,naics,primexch,trdstat,secstat,permco,compno,issuno,hexcd,hsiccd,cusip);
+
 # TAQ symbols only
 SET GLOBAL innodb_file_per_table=1;
 CREATE TABLE `taqcusips` (
