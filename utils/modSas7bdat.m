@@ -8,7 +8,7 @@ function modSas7bdat(csvfile)
 tmp = dataset('File',csvfile,'Delimiter',',');
 
 % Drop the LIBRARY_Id 
-tmp(:,'LIBRARY_Id') = [];
+tmp = tmp(:, setdiff(tmp.Properties.VarNames, 'LIBRARY_Id','stable'));
 
 % Remove 'x___' as in x___PERMNO
 tmp.Properties.VarNames = regexprep(tmp.Properties.VarNames,'x___','');
@@ -19,6 +19,12 @@ c   = datenum('19600101',fmt);
 f   = @(var) strcat('"',cellstr(datestr(cellfun(@(x) sscanf(x,'"%f"') + c, var),fmt)),'"');
 tmp = replacedata(tmp, f, 'NAMEDT');
 tmp = replacedata(tmp, f, 'NAMEENDT');
+
+% Replace missing with \N, for MySQL's LOAD INFILE
+for v = tmp.Properties.VarNames
+     idx = strcmp(tmp.(v{:}),'""');
+     tmp.(v{:})(idx) = {'"\N"'};
+end
 
 % Export
 export(tmp,'file', strrep(csvfile,'.csv','_mod.csv') ,'Delimiter',',');

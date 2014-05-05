@@ -5,38 +5,6 @@
 #---------------------------------------------------------------------------------------------------
 SET GLOBAL innodb_file_per_table=1;
 
-# crsp_stocknames
-CREATE TABLE `crsp_stocknames` (
-  `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `permno` int(10) DEFAULT NULL,
-  `permco` int(11) DEFAULT NULL,
-  `namedt` int(11) DEFAULT NULL,
-  `nameenddt` int(11) DEFAULT NULL,
-  `cusip` char(8) DEFAULT NULL,
-  `ncusip` char(8) DEFAULT NULL,
-  `ticker` varchar(10) DEFAULT NULL,
-  `comnam` varchar(40) DEFAULT NULL,
-  `hexcd` tinyint(4) DEFAULT NULL,
-  `exchcd` tinyint(4) DEFAULT NULL,
-  `siccd` smallint(5) unsigned DEFAULT NULL,
-  `shrcd` tinyint(4) DEFAULT NULL,
-  `shrcls` char(1) DEFAULT NULL,
-  `st_date` int(10) unsigned DEFAULT NULL,
-  `end_date` int(10) unsigned DEFAULT NULL,
-  `namedum` tinyint(4) DEFAULT NULL,
-  PRIMARY KEY (`PK`),
-  UNIQUE KEY `PK_UNIQUE` (`PK`),
-  KEY `stocknames_ncusip` (`ncusip`),
-  KEY `stocknames_ticker` (`ticker`),
-  KEY `stocknames_name` (`comnam`),
-  KEY `stocknames_namedt` (`namedt`),
-  KEY `stocknames_nameenddt` (`nameenddt`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPstocknames.csv'
-INTO TABLE hfbetas.crsp_stocknames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
-(permno,permco,namedt,nameenddt,cusip,ncusip,ticker,comnam,hexcd,exchcd,siccd,shrcd,shrcls,st_date,end_date,namedum);
-
 # crsp_msenames
 CREATE TABLE `crsp_msenames` (
   `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -51,27 +19,27 @@ CREATE TABLE `crsp_msenames` (
   `comnam` varchar(40) DEFAULT NULL,
   `shrcls` char(1) DEFAULT NULL,
   `tsymbol` varchar(10) DEFAULT NULL,
-  `naics` mediumint(7) unsigned DEFAULT NULL,
-  `primexch` char(1) NOT NULL, 
-  `trdstat` char(1) NOT NULL, 
-  `secstat` char(1) NOT NULL, 
+  `naics` mediumint(8) unsigned DEFAULT NULL,
+  `primexch` char(1) NOT NULL,
+  `trdstat` char(1) NOT NULL,
+  `secstat` char(1) NOT NULL,
   `permco` int(11) DEFAULT NULL,
-  `compno` int(8) unsigned, 
-  `issuno` int(8) unsigned, 
+  `compno` int(8) unsigned DEFAULT NULL,
+  `issuno` int(8) unsigned DEFAULT NULL,
   `hexcd` tinyint(4) DEFAULT NULL,
   `hsiccd` smallint(5) unsigned DEFAULT NULL,
   `cusip` char(8) DEFAULT NULL,
   PRIMARY KEY (`PK`),
   UNIQUE KEY `PK_UNIQUE` (`PK`),
   KEY `stocknames_ncusip` (`ncusip`),
-  KEY `stocknames_ticker` (`ticker`),
+  KEY `stocknames_tsymbol` (`tsymbol`),
   KEY `stocknames_name` (`comnam`),
   KEY `stocknames_namedt` (`namedt`),
   KEY `stocknames_nameenddt` (`nameenddt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames.csv'
-INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES
+INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\r\n' IGNORE 1 LINES
 (permno,namedt,nameenddt,shrcd,exchcd,siccd,ncusip,ticker,comnam,shrcls,tsymbol,naics,primexch,trdstat,secstat,permco,compno,issuno,hexcd,hsiccd,cusip);
 
 # TAQ symbols only
@@ -138,28 +106,24 @@ select distinct taq.cusip, taq.datef, taq.symbol, taq.name
 #--------------
 
 UPDATE final ff,  (select distinct q.permno, f.cusip
-						from final f join crsp_stocknames q on f.cusip = q.ncusip) qq
+						from final f join crsp_msenames q on f.cusip = q.ncusip) qq
 SET ff.permno = qq.permno, ff.score = 10
 WHERE ff.cusip = qq.cusip;
 
 # 2) ON SYMBOL
 #-------------
 
-# SCORE: 20; Match D) SYMBOL = TICKER + DATEF within min/max of date ranges (name or data)
+# SCORE: 20; Match B) SYMBOL = TICKER + DATEF within name date ranges 
 UPDATE final ff,  
 	(select distinct q.permno, f.cusip, f.datef, f.name, f.symbol
 		from (select * from final where permno is null) f 
-			join crsp_stocknames q 
-			on f.symbol = q.ticker AND (f.datef BETWEEN least(q.namedt, q.st_date) and greatest(q.end_date,q.nameenddt))
+			join crsp_msenames q 
+			on f.symbol = q.tsymbol AND (f.datef BETWEEN q.namedt and q.nameenddt)
 	) qq
 SET ff.permno = qq.permno, ff.score = 20
 WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
 
-# SCORE: 21; propagate permno for backed-out cusips (from matched symbol) also on non-matched date ranges
-UPDATE final f,  
-	(select distinct cusip, permno from final where score = 20) q 
-SET f.permno = q.permno, f.score = 21
-WHERE f.cusip = q.cusip AND f.permno is null;
+# No propagation (0 matches)!
 
 select score, count(*), count(score)*100/count(*)
 	from final
