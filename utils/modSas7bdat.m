@@ -7,6 +7,9 @@ function modSas7bdat(csvfile)
 % Import
 tmp = dataset('File',csvfile,'Delimiter',',');
 
+% Remove duplicates
+tmp = unique(tmp);
+
 % Drop the LIBRARY_Id 
 tmp = tmp(:, setdiff(tmp.Properties.VarNames, 'LIBRARY_Id','stable'));
 

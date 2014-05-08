@@ -38,7 +38,7 @@ CREATE TABLE `crsp_msenames` (
   KEY `stocknames_nameenddt` (`nameenddt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames.csv'
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames_mod.csv'
 INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\r\n' IGNORE 1 LINES
 (permno,namedt,nameenddt,shrcd,exchcd,siccd,ncusip,ticker,comnam,shrcls,tsymbol,naics,primexch,trdstat,secstat,permco,compno,issuno,hexcd,hsiccd,cusip);
 
@@ -48,7 +48,7 @@ CREATE TABLE `taqcusips` (
   `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `cusip` varchar(8) DEFAULT NULL,
   `symbol` varchar(10) DEFAULT NULL,
-  `name` varchar(40) DEFAULT NULL,
+  `name` varchar(30) DEFAULT NULL,
   `datef` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`PK`) KEY_BLOCK_SIZE=8,
   UNIQUE KEY `taqcusips_UNIQUE` (`PK`) KEY_BLOCK_SIZE=8,
