@@ -2,91 +2,118 @@
 % Based on Levenshtein
 
 %% Retrieve data from database
-javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
-
-setdbprefs({'DataReturnFormat';'NullStringRead'},{'dataset';''})
-dbname = 'hfbetas';
-user   = 'okomarov';
-driver = 'com.mysql.jdbc.Driver';
-dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
-pass   = input('Password: ','s');
-conn   = database(dbname, user, pass, driver, dburl);
-clear pass
-clc
-if ~isconnection(conn), error('Not connected.'), end
-
-% Retrieve final
-curs  = exec(conn,'SELECT pk, permno, symbol, name, datef FROM final WHERE score is null;');
-curs  = fetch(curs);
-final = curs.data;
-final = replacedata(final, @upper, {'name','symbol'});
-
-% Retrieve crsp stocknames
-curs = exec(conn,'SELECT permno, namedt, nameenddt, ticker, comnam FROM crsp_stocknames;');
-curs = fetch(curs);
-crsp = curs.data;
-crsp = replacedata(crsp, @upper, {'comnam','ticker'});
-
-close(curs),clear curs, close(conn), clear conn
-save debugstate
+% javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
+% 
+% setdbprefs({'DataReturnFormat';'NullStringRead'},{'dataset';''})
+% s.dbname = 'hfbetas';
+% s.user   = 'okomarov';
+% s.driver = 'com.mysql.jdbc.Driver';
+% s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
+% s.pass   = input('Password: ','s');
+% conn   = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
+% clear pass
+% clc
+% if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
+% 
+% % Retrieve final
+% curs  = exec(conn,'SELECT * FROM final;');
+% curs  = fetch(curs);
+% final = curs.data;
+% final = replacedata(final, @upper, {'name','symbol'});
+% 
+% % Retrieve crsp stocknames
+% curs = exec(conn,'SELECT permno, namedt, nameenddt, tsymbol, comnam FROM crsp_msenames;');
+% curs = fetch(curs);
+% crsp = curs.data;
+% crsp = replacedata(crsp, @upper, {'comnam','tsymbol'});
+% 
+% close(curs),clear curs, close(conn), clear conn
+% save debugstate
 %% Ticker and name match
 addpath .\utils\edit_distances\
 load debugstate
 N = size(final,1);
-final.score = NaN(N,1);
 
 startdt = fix(crsp.namedt/100);
 enddt   = fix(crsp.nameenddt/100);
 tic
+
 for ii = 1:size(final,1)
+    
+    % Check that already has permno
+    if ~isnan(final(ii,:).score), continue, end
+    
+    % Check if it has name
+    name = final(ii,:).name{1};
+    if isempty(name), continue, end
+    
     % From TAQ
     symbol = final(ii,:).symbol{1};
-    n      = numel(symbol);
-    
-    % Check against first 5 letters, CRSP tickers are never longer
-    if n > 5, symbol = symbol(1:5); n = 5; end
-    
     datef  = final(ii,:).datef;
-    name   = final(ii,:).name{1};
-    
-    
+        
     % Restrict datef to be in monthly [namedt, nameenddt]
     date  = fix(datef/100);
     idate = date >= startdt & date <= enddt;
     % Create char comparison matrix
-    tmp     = crsp(idate,{'ticker','comnam','permno'});
-    ticklen = cellfun('size',tmp.ticker,2);
-    cticker = char(tmp.ticker);
+    tmp      = crsp(idate,{'tsymbol','comnam','permno'});
+    ticklen  = cellfun('size',tmp.tsymbol,2);
+    ctsymbol = char(tmp.tsymbol);
+    nsym     = numel(symbol);
+    ntsym    = size(ctsymbol,2);
+    
+    if nsym > ntsym
+        symbol = symbol(1:ntsym);
+    else
+        ctsymbol = ctsymbol(:,1:nsym);
+    end
     
     % Check letter by letter
-    nchars   = sum(bsxfun(@eq, cticker(:,1:n), symbol),2);
+    nchars   = sum(bsxfun(@eq, ctsymbol, symbol),2);
     maxchars = max(nchars);
+    % Ensure full tsymbol match (can be substring of symbol)
+    imatch   = nchars == maxchars & ticklen == maxchars;
     
-    imatch = nchars == maxchars & ticklen == maxchars;
-    if ~isempty(name)
-        comnames = char(tmp.comnam(imatch));
-        nnames   = nnz(imatch);
-        d = zeros(nnz(imatch),1);
-        for jj = 1:nnames
-            d(jj) = edit_distance_levenshtein(name, comnames(jj,:));
-        end
-        iname = d == min(d) & d < 10;
-        if nnz(iname) == 1
-            pmatch = find(imatch);
-            final(ii,:).score = 30;
-            final(ii,:).permno = tmp.permno(pmatch(iname));
-            fprintf('Lev dist %d on %d\n',min(d),ii) 
-        elseif ~isempty(iname)
-            fprintf('Multiple or bad name on %d\n',ii) 
-        end
-    else
-        permno = unique(tmp.permno(imatch));
-        if numel(permno) > 1
-            fprintf('Multiple permnos no name on %d\n',ii)
-        elseif ~isempty(permno)
-            final(ii,:).score = 40;
-            final(ii,:).permno = permno;
-        end
+    % Add name comparison
+    comnames = char(tmp.comnam(imatch));
+    nnames   = nnz(imatch);
+    d = zeros(nnz(imatch),1);
+    for jj = 1:nnames
+        d(jj) = edit_distance_levenshtein(name, comnames(jj,:));
+    end
+    iname = d == min(d) & d < 15;
+    % If unique name matched
+    if nnz(iname) == 1
+        pmatch = find(imatch);
+        final(ii,:).score = 30;
+        final(ii,:).permno = tmp.permno(pmatch(iname));
+        fprintf('Lev dist %d on %d\n',min(d),ii)
+        %             disp(char(name,comnames(iname)))
     end
 end
 toc
+%% Update back to db
+javaaddpath('C:\Program Files  (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
+
+% Establish connection
+s.dbname = 'hfbetas';
+s.user   = 'okomarov';
+s.driver = 'com.mysql.jdbc.Driver';
+s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
+s.pass   = input('Password: ','s');
+conn   = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
+clear pass
+clc
+if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
+
+tic
+idx   = final.score == 30;
+cols  = {'permno','score'};
+data  = [final.(cols{1})(idx) final.(cols{2})(idx)];
+where = arrayfun(@(x) sprintf('where PK = %d',x), final.PK(idx),'un',0);
+update(conn, 'final', cols, data, where)
+toc
+
+
+
+
+
