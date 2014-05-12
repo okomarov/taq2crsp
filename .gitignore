@@ -1,6 +1,7 @@
 data/
 
 *.mat
+*.mexw64
 
 # Tex bloat
 tex/*.bak
