@@ -38,7 +38,7 @@ CREATE TABLE `crsp_msenames` (
   KEY `stocknames_nameenddt` (`nameenddt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames_mod.csv'
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\CRSPmsenames.csv'
 INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\r\n' IGNORE 1 LINES
 (permno,namedt,nameenddt,shrcd,exchcd,siccd,ncusip,ticker,comnam,shrcls,tsymbol,naics,primexch,trdstat,secstat,permco,compno,issuno,hexcd,hsiccd,cusip);
 
@@ -110,8 +110,8 @@ UPDATE final ff,  (select distinct q.permno, f.cusip
 SET ff.permno = qq.permno, ff.score = 10
 WHERE ff.cusip = qq.cusip;
 
-# 2) ON SYMBOL
-#-------------
+# 2) ON SYMBOL + DATE
+#--------------------
 
 # SCORE: 20; Match B) SYMBOL = TICKER + DATEF within name date ranges 
 UPDATE final ff,  
@@ -123,7 +123,23 @@ UPDATE final ff,
 SET ff.permno = qq.permno, ff.score = 20
 WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
 
-# No propagation (0 matches)!
+# Propagate by name
+select *
+	from (select permno, name 
+			from final
+			where score is not null and name is not null
+			group by name
+			having count(distinct permno) = 1) f 
+		join (select pk, name from final where score is null and name is not null) q
+		on f.name = q.name
+	order by q.pk
+
+select * from final where name = 'AM INTERNATIONALINC'
+
+# 3) SYMBOL and NAME and NAME only on MATLAB with levenshtein distance
+
+
+
 
 select score, count(*), count(score)*100/count(*)
 	from final
