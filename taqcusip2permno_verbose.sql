@@ -340,7 +340,7 @@ select score, count(*), count(score)*100/count(*)
 	group by score with rollup;
 
 #---------------------------------------------------------------------------------------------------
-# COMPARE AGAINST NO DATE CUSIP MATCH
+# COMPARE AGAINST NO DATE CUSIP MATCH - BETTER!
 #---------------------------------------------------------------------------------------------------
 # Create final table & copy all entries from TAQcusips, i.e. it's the target set 
 create table final4 (PK int not null auto_increment, ID int, permno int, cusip char(8), symbol varchar(10), 
@@ -404,6 +404,30 @@ select * # obviously 0
 	from final4 f4 
 		join final f on f4.pk = f.pk
 	where f4.permno is  null and f.permno is not null;	
+
+#---------------------------------------------------------------------------------------------------
+# COMPARE AGAINST TCLINK
+#---------------------------------------------------------------------------------------------------
+
+# wrds_tclink
+CREATE TABLE `wrds_tclink` (
+  `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `permno` int(10) DEFAULT NULL,
+  `cusip` char(8) DEFAULT NULL,  
+  `date` int(11) unsigned DEFAULT NULL,
+  `symbol` varchar(10) DEFAULT NULL,
+  `score` tinyint(1) unsigned DEFAULT 0,
+  PRIMARY KEY (`PK`),
+  UNIQUE KEY `PK_UNIQUE` (`PK`),
+  KEY `wrdstclink_cusip` (`cusip`),
+  KEY `wrdstclink_symbol` (`symbol`),
+  KEY `wrdstclink_date` (`date`),
+  KEY `wrdstclink_permno` (`permno`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\WRDStclink.csv'
+INTO TABLE hfbetas.wrds_tclink character set utf8 FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\r\n' IGNORE 1 LINES
+(permno,cusip,date,symbol,score);
 
 
 #---------------------------------------------------------------------------------------------------
