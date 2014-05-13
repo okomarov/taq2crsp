@@ -30,14 +30,15 @@
 % close(curs),clear curs, close(conn), clear conn
 % save debugstate
 %% Ticker and name match
-addpath .\utils\edit_distances\
+addpath .\utils\LevenDistance\
 load debugstate
 N = size(final,1);
 
 startdt = fix(crsp.namedt/100);
 enddt   = fix(crsp.nameenddt/100);
-tic
 
+tic
+% SYMBOL and NAME comparison
 for ii = 1:size(final,1)
     
     % Check that already has permno
@@ -76,9 +77,9 @@ for ii = 1:size(final,1)
     % Add name comparison
     comnames = char(tmp.comnam(imatch));
     nnames   = nnz(imatch);
-    d = zeros(nnz(imatch),1);
+    d        = inf(nnames,1);
     for jj = 1:nnames
-        d(jj) = edit_distance_levenshtein(name, comnames(jj,:));
+        d(jj) = LevenDistance(name, comnames(jj,:));
     end
     iname = d == min(d) & d < 15;
     % If unique name matched
@@ -91,8 +92,43 @@ for ii = 1:size(final,1)
     end
 end
 toc
+
+tic
+% NAME match
+for ii = 1:size(final,1)
+     % Check that already has permno
+    if ~isnan(final(ii,:).score), continue, end
+    
+    % Check if it has name
+    name = final(ii,:).name{1};
+    if isempty(name), continue, end
+	        
+    % Restrict datef to be in monthly [namedt, nameenddt]
+    datef = final(ii,:).datef;
+    date  = fix(datef/100);
+    idate = date >= startdt & date <= enddt;
+    
+    % Temporary
+    tmp      = crsp(idate,{'tsymbol','comnam','permno'});
+    comnames = char(tmp.comnam);
+    nnames   = nnz(idate);
+    d        = inf(nnames,1);
+    for jj = 1:nnames
+        d(jj) = LevenDistance(name, comnames(jj,:));
+    end
+    
+    iname = d == min(d) & d < 10;
+    % If unique name matched
+    if nnz(iname) == 1
+        final(ii,:).score = 40;
+        final(ii,:).permno = tmp.permno(iname);
+        fprintf('Lev dist %d on %d\n',min(d),ii)
+        %             disp(char(name,comnames(iname)))
+    end
+end
+toc
 %% Update back to db
-javaaddpath('C:\Program Files  (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
+javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
 
 % Establish connection
 s.dbname = 'hfbetas';
@@ -100,20 +136,20 @@ s.user   = 'okomarov';
 s.driver = 'com.mysql.jdbc.Driver';
 s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
 s.pass   = input('Password: ','s');
-conn   = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
-clear pass
+conn     = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
+clear s
 clc
 if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
 
 tic
-idx   = final.score == 30;
+idx   = final.score == 30 | final.score == 40;
 cols  = {'permno','score'};
 data  = [final.(cols{1})(idx) final.(cols{2})(idx)];
 where = arrayfun(@(x) sprintf('where PK = %d',x), final.PK(idx),'un',0);
 update(conn, 'final', cols, data, where)
 toc
 
-
+%% Unique ID
 
 
 
