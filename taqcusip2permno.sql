@@ -123,23 +123,32 @@ UPDATE final ff,
 SET ff.permno = qq.permno, ff.score = 20
 WHERE ff.symbol = qq.symbol AND ff.datef = qq.datef;
 
-# Propagate by name
-select *
-	from (select permno, name 
+# SCORE: X + 1; Propagate by exact match on name (when only one permno per name)
+# NOTE: only happens on 10 (by symbol the name always differ?)
+UPDATE final f 
+	join  (select permno, name, score 
 			from final
 			where score is not null and name is not null
 			group by name
-			having count(distinct permno) = 1) f 
-		join (select pk, name from final where score is null and name is not null) q
-		on f.name = q.name
-	order by q.pk
+			having count(distinct permno) = 1) q
+	on f.name = q.name
+SET f.permno = q.permno, f.score = q.score+1
+WHERE f.permno is null;
 
-select * from final where name = 'AM INTERNATIONALINC'
+select * from final where score = 11
+
+
+select permno, symbol, @l:= left(symbol,char_length(symbol)-2) l
+	from final
+	where right(symbol,2) = 'CL' and permno is not null
+	order by permno, symbol
+
+select * from final where permno = 69112;
+select * from final where name like 'AM INTERNATIONALINC';
+
+select * from final where symbol = 'abnpra'
 
 # 3) SYMBOL and NAME and NAME only on MATLAB with levenshtein distance
-
-
-
 
 select score, count(*), count(score)*100/count(*)
 	from final
