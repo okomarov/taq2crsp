@@ -2,33 +2,33 @@
 % Based on Levenshtein
 
 %% Retrieve data from database
-% javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
-% 
-% setdbprefs({'DataReturnFormat';'NullStringRead'},{'dataset';''})
-% s.dbname = 'hfbetas';
-% s.user   = 'okomarov';
-% s.driver = 'com.mysql.jdbc.Driver';
-% s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
-% s.pass   = input('Password: ','s');
-% conn   = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
-% clear pass
-% clc
-% if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
-% 
-% % Retrieve final
-% curs  = exec(conn,'SELECT * FROM final;');
-% curs  = fetch(curs);
-% final = curs.data;
-% final = replacedata(final, @upper, {'name','symbol'});
-% 
-% % Retrieve crsp stocknames
-% curs = exec(conn,'SELECT permno, namedt, nameenddt, tsymbol, comnam FROM crsp_msenames;');
-% curs = fetch(curs);
-% crsp = curs.data;
-% crsp = replacedata(crsp, @upper, {'comnam','tsymbol'});
-% 
-% close(curs),clear curs, close(conn), clear conn
-% save debugstate
+javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
+
+setdbprefs({'DataReturnFormat';'NullStringRead'},{'dataset';''})
+s.dbname = 'hfbetas';
+s.user   = 'okomarov';
+s.driver = 'com.mysql.jdbc.Driver';
+s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', s.dbname);
+s.pass   = input('Password: ','s');
+conn     = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
+clear s
+clc
+if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
+
+% Retrieve final
+curs  = exec(conn,'SELECT * FROM final;');
+curs  = fetch(curs);
+final = curs.data;
+final = replacedata(final, @upper, {'name','symbol'});
+
+% Retrieve crsp stocknames
+curs = exec(conn,'SELECT permno, namedt, nameenddt, tsymbol, comnam FROM crsp_msenames;');
+curs = fetch(curs);
+crsp = curs.data;
+crsp = replacedata(crsp, @upper, {'comnam','tsymbol'});
+
+close(curs),clear curs, close(conn), clear conn
+save debugstate
 %% Ticker and name match
 addpath .\utils\LevenDistance\
 load debugstate
@@ -81,7 +81,7 @@ for ii = 1:size(final,1)
     for jj = 1:nnames
         d(jj) = LevenDistance(name, comnames(jj,:));
     end
-    iname = d == min(d) & d < 15;
+    iname = d == min(d) & d < 10;
     % If unique name matched
     if nnz(iname) == 1
         pmatch = find(imatch);
@@ -127,6 +127,7 @@ for ii = 1:size(final,1)
     end
 end
 toc
+save debugstate2 final crsp
 %% Update back to db
 javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
 
@@ -134,7 +135,7 @@ javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java
 s.dbname = 'hfbetas';
 s.user   = 'okomarov';
 s.driver = 'com.mysql.jdbc.Driver';
-s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', dbname);
+s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', s.dbname);
 s.pass   = input('Password: ','s');
 conn     = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
 clear s
@@ -150,6 +151,39 @@ update(conn, 'final', cols, data, where)
 toc
 
 %% Unique ID
+load debugstate2
 
+% Set starting value of ID
+ID = 1;
+
+% If only symbol tag by that independently of the date 
+% (ensure that symbols retrieved here don't have a match on the ones with cusip/permno)
+onlySymbol = unique(final.symbol(isnan(final.permno) & cellfun('isempty',final.cusip)));
+
+while ~isempty(onlySymbol)
+    symbol = onlySymbol(1);
+    final.ID(strcmpi(symbol, final.symbol)) = ID;
+    ID         = ID+1;
+    onlySymbol = onlySymbol(2:end);
+end
+
+% If has also but not permno
+onlyCusip = unique(final.cusip(isnan(final.permno) & ~cellfun('isempty',final.cusip) &...
+                   isnan(final.ID)));
+while ~isempty(onlyCusip)
+    cusip = onlyCusip(1);
+    idx   = strcmpi(cusip, final.cusip);
+    
+    final.ID() = ID;
+    ID        = ID+1;
+    onlyCusip = onlyCusip(2:end);
+end
+                    
+% Then by permno
+
+
+
+% Tag first all of the 
+sortrows(final,'permno')
 
 
