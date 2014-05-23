@@ -501,7 +501,7 @@ select *
 
 select * from crsp_stocknames where permno = 80170;
 
-# Check this match!
+# Check this match: IFS change of company, until october it's some permno AND from september is also a different one!
 select * 
 	from crsp_stocknames
 	where permno in (79701, 86345);
@@ -603,6 +603,17 @@ select f.pk, q.permno, f.cusip, q.ncusip, min(q.namedt) namedt, f.datef, max(q.n
 select * from taqcusips where cusip in (select distinct cusip from taqcusips where symbol ='ABD');
 select * from taqcusips where cusip in('00081T10');
 select * from taqcusips where symbol ='AAG';
+
+
+# Q: same name different permnos?
+select * 
+	from crsp_msenames L 
+		join (select comnam
+				from crsp_msenames
+				group by comnam
+				having count(distinct permno) > 1) R on L.comnam = R.comnam
+	order by L.comnam, namedt
+# A: yes, even on same time frames, usually different SHRCLS (share class)
 
 
 # size of tables
