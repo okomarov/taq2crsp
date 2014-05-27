@@ -169,7 +169,7 @@
 
 load debugstate3
 tic
-% If has also but not permno
+% If has also CUSIP but not PERMNO
 final = sortrows(final,{'cusip','datef'});
 final.symlen = cellfun('size',final.symbol,2);
 onlyCusip = unique(final.cusip(isnan(final.permno) & ~cellfun('isempty',final.cusip) &...
@@ -185,7 +185,7 @@ while ~isempty(onlyCusip)
     else
         % Retrieve records with given CUSIP
         tmp = final(icusip,:);
-        pos = tmp.PK;
+        pos = find(icusip);
         
         % Initialize reference symbol
         refID  = ID;
@@ -224,7 +224,7 @@ while ~isempty(onlyCusip)
                 noOverlap = sum(bsxfun(@ge, refDates, currDates'));
                 noOverlap = all(noOverlap == 0 | noOverlap == numel(refDates));
 
-                % No common root
+                % [WEAK LINK: how to identify root] No common root
                 if refSym(1) ~= curr(1) && noOverlap
                     idx         = strcmpi(curr, tmp.symbol);
                     tmp.ID(idx) = refID;
@@ -235,16 +235,82 @@ while ~isempty(onlyCusip)
                 end
                 refSym = curr;
             end
-
-            % Assign back to original array
-            final.ID(pos) = tmp.ID;
-        end
-        
+        end % LOOP
+        % Assign back to original array
+        final.ID(pos) = tmp.ID;
     end
     onlyCusip = onlyCusip(2:end);
 end
 toc                    
-% Then by permno
 
-% Tag first all of the 
-% sortrows(final,{'permno','datef'})
+% Has PERMNO
+final   = sortrows(final,{'permno','datef'});
+permnos = unique(final.permno(~isnan(final.permno) & isnan(final.ID)));
+while ~isempty(permnos)
+    ID       = ID+1;
+    permno   = permnos(1);
+    ipermno  = final.permno == permno;
+    nmatches = nnz(ipermno);
+     
+    if nmatches == 1
+        final.ID(ipermno) = ID;
+    else
+        % Retrieve records with given CUSIP
+        tmp = final(ipermno,:);
+        pos = find(ipermno);
+        
+        % Initialize reference symbol
+        refID  = ID;
+        refSym = tmp.symbol{1};
+        refN   = tmp.symlen(1);
+               
+        % Match reference symbol
+        idx         = strcmpi(refSym, tmp.symbol);
+        tmp.ID(idx) = refID;
+        
+        % LOOP for all remaining records
+        for ii = 2:nmatches
+            
+            % If already has ID, skip
+            if ~isnan(tmp.ID(ii)), continue, end
+            
+            curr  = tmp.symbol{ii};
+            ncurr = tmp.symlen(ii);
+            
+            % REF substr of CURR
+            if strncmpi(refSym, curr, refN)
+                ID          = ID + 1;
+                idx         = strcmpi(curr, tmp.symbol);
+                tmp.ID(idx) = ID;
+            
+            % CURR substr of REF
+            elseif strncmpi(curr, refSym, ncurr)
+                refID       = ID + 1;
+                idx         = strcmpi(curr, tmp.symbol);
+                tmp.ID(idx) = refID;
+                refSym      = curr;
+            else
+                % Check that periods don't overlap
+                refDates  = tmp.datef(strcmpi(refSym,tmp.symbol));
+                currDates = tmp.datef(strcmpi(curr,tmp.symbol));
+                noOverlap = sum(bsxfun(@ge, refDates, currDates'));
+                noOverlap = all(noOverlap == 0 | noOverlap == numel(refDates));
+
+                % [WEAK LINK] No common root
+                if refSym(1) ~= curr(1) && noOverlap
+                    idx         = strcmpi(curr, tmp.symbol);
+                    tmp.ID(idx) = refID;
+                else
+                    refID       = ID + 1;
+                    idx         = strcmpi(curr, tmp.symbol);
+                    tmp.ID(idx) = refID;
+                end
+                refSym = curr;
+            end
+        end % LOOP
+        % Assign back to original array
+        final.ID(pos) = tmp.ID;
+    end
+    permnos = permnos(2:end);
+end
+toc    
