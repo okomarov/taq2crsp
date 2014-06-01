@@ -135,7 +135,14 @@ idx       =  [true; ~(strcmpi(TAQshrout.CUSIP8(2:end), TAQshrout.CUSIP8(1:end-1)
                       strcmpi(TAQshrout.SYMBOL(2:end), TAQshrout.SYMBOL(1:end-1)) &...
                               TAQshrout.SHROUT(2:end)==TAQshrout.SHROUT(1:end-1))];
 TAQshrout = TAQshrout(idx,:);
-save TAQshrout.mat TAQshrout
+
+% Get rid of 0s
+TAQshrout = TAQshrout(TAQshrout.SHROUT ~= 0,:);
+
+% No missing values (nothing to replace with \N, for MySQL's LOAD INFILE)
+missing = ismissing(TAQshrout);
+export(TAQshrout,'file',fullfile(d,'TAQshrout.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
+toc
 %% WRDStclink
 % Import .csv
 addpath .\utils\

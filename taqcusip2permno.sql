@@ -43,7 +43,6 @@ INTO TABLE hfbetas.crsp_msenames character set utf8 FIELDS TERMINATED BY ',' ENC
 (permno,namedt,nameenddt,shrcd,exchcd,siccd,ncusip,ticker,comnam,shrcls,tsymbol,naics,primexch,trdstat,secstat,permco,compno,issuno,hexcd,hsiccd,cusip);
 
 # TAQ symbols only
-SET GLOBAL innodb_file_per_table=1;
 CREATE TABLE `taqcusips` (
   `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `cusip` varchar(8) DEFAULT NULL,
@@ -61,7 +60,6 @@ INTO TABLE hfbetas.taqcusips character set utf8 FIELDS TERMINATED BY '\t' LINES 
 (cusip,symbol,name,datef);
 
 # TAQ code and type
-SET GLOBAL innodb_file_per_table=1;
 CREATE TABLE `taqcodetype` (
   `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `cusip` varchar(8) DEFAULT NULL,
@@ -71,6 +69,7 @@ CREATE TABLE `taqcodetype` (
   `type` tinyint(1) unsigned DEFAULT NULL,
   PRIMARY KEY (`PK`) KEY_BLOCK_SIZE=8,
   UNIQUE KEY `taqcodetype_UNIQUE` (`PK`) KEY_BLOCK_SIZE=8,
+  KEY `taqcodetype_symbol` (`symbol`),
   KEY `taqcodetype_cusip` (`cusip`),
   KEY `taqcodetype_datef` (`datef`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
@@ -78,6 +77,24 @@ CREATE TABLE `taqcodetype` (
 LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQcodetype.tab'
 INTO TABLE hfbetas.taqcodetype character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
 (cusip,symbol,datef,icode,type);
+
+# TAQ shrout
+CREATE TABLE `taqshrout` (
+  `PK` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `cusip` varchar(8) DEFAULT NULL,
+  `symbol` varchar(10) DEFAULT NULL,
+  `datef` int(10) unsigned DEFAULT NULL,
+  `shrout` int(10) unsigned DEFAULT NULL,
+  PRIMARY KEY (`PK`) KEY_BLOCK_SIZE=8,
+  UNIQUE KEY `taqshrout_UNIQUE` (`PK`) KEY_BLOCK_SIZE=8,
+  KEY `taqshrout_symbol` (`symbol`),
+  KEY `taqshrout_cusip` (`cusip`),
+  KEY `taqshrout_datef` (`datef`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+LOAD DATA INFILE '..\\..\\taq2crsp\\data\\TAQshrout.tab'
+INTO TABLE hfbetas.taqshrout character set utf8 FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' IGNORE 1 LINES
+(cusip,symbol,datef,shrout);
 
 #---------------------------------------------------------------------------------------------------
 # POST-IMPORT PROCESSING
