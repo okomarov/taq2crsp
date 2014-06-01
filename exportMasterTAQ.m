@@ -11,7 +11,7 @@ list      = list(idx);
 nfiles    = numel(list);
 TAQmaster = cell(nfiles,1);
 % fmt       = ['%s %s %s ',repmat('%*u8 ',1,9),'%*s %*f %*f %*s %*u8 %f %*[^\n]'];
-fmt       = ['%s %s %s ',repmat('%u8 ',1,9),'%s %*f %*f %s %u8 %f %*[^\n]'];
+fmt       = ['%s %s %s ',repmat('%u8 ',1,9),'%s %f %*f %s %u8 %f %*[^\n]'];
 opts      = {'Delimiter',',','ReadVarNames',1,'CommentStyle',{'"','"'}};
 
 % LOOP by file - 20 sec
@@ -27,8 +27,8 @@ delete(list{:})
 % Add .tab master files from dvd
 list2     = unzip(fullfile(d,'raw','TAQmast.tab.zip'),d);
 list2     = sort(list2);
-fmt       = '%10c %30c %12c %c%c%c %*2c %c%c%c%c%c %c %4c %*10c %*4c %c %c %8c %*[^\n]';
-names     = {'SYMBOL','NAME','CUSIP','ETN','ETA','ETB','ETP','ETX','ETT','ETO','ETW','ITS','ICODE','DENOM','TYPE','FDATE'};
+fmt       = '%10c %30c %12c %c%c%c %*2c %c%c%c%c%c %c %4c %10c %*4c %c %c %8c %*[^\n]';
+names     = {'SYMBOL','NAME','CUSIP','ETN','ETA','ETB','ETP','ETX','ETT','ETO','ETW','ITS','ICODE','SHROUT','DENOM','TYPE','FDATE'};
 nfiles2   = numel(list2);
 TAQmaster = [TAQmaster; cell(nfiles2,1)];
 
@@ -44,7 +44,7 @@ for ii = 1:nfiles2
     
     % Convert
     f = @(x,n) cellstr(x{n});
-    g = @(x) [f(x,1) f(x,2) f(x,3)  num2cell(uint8([x{4:12}]-'0'))  f(x,13) f(x,14) num2cell(uint8(x{15}-'0')) num2cell(str2num(x{16}))];
+    g = @(x) [f(x,1) f(x,2) f(x,3)  num2cell(uint8([x{4:12}]-'0'))  f(x,13) num2cell(str2num(x{14})) f(x,15) num2cell(uint8(x{16}-'0')) num2cell(str2num(x{17}))];
     TAQmaster{nfiles+ii} = cell2dataset(g(tmp),'VarNames',names);
 end
 toc
@@ -63,7 +63,7 @@ delete(list2{:})
 % It's actually more complicated than it might appear, due to the numerous
 % suffixes that SYMBOLS have, see the TAQ monthly guide suffix appendices.
 
-% Concatenate everything - 20 sec
+% Concatenate everything - 67 sec
 TAQmaster = cat(1,TAQmaster{:});
 
 % Extract CUSIP info. CUSIP lengths can be 12 (full), 0 (absent) and 9 (missing NSCC issue digits)
@@ -127,6 +127,15 @@ TAQcodetype.CUSIP8(missing(:,1)) = {'\N'};
 TAQcodetype.ICODE(missing(:,4)) = {'\N'};
 export(TAQcodetype,'file',fullfile(d,'TAQcodetype.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
 toc
+%% TAQshrout
+% Number of shares
+TAQshrout = unique(TAQmaster(:,{'CUSIP8','SYMBOL','FDATE','SHROUT'}));
+TAQshrout = sortrows(TAQshrout,{'CUSIP8','FDATE','SYMBOL'});
+idx       =  [true; ~(strcmpi(TAQshrout.CUSIP8(2:end), TAQshrout.CUSIP8(1:end-1)) &...
+                      strcmpi(TAQshrout.SYMBOL(2:end), TAQshrout.SYMBOL(1:end-1)) &...
+                              TAQshrout.SHROUT(2:end)==TAQshrout.SHROUT(1:end-1))];
+TAQshrout = TAQshrout(idx,:);
+save TAQshrout.mat TAQshrout
 %% WRDStclink
 % Import .csv
 addpath .\utils\
