@@ -9,18 +9,9 @@
 %   except for an exhaustive hard-coding. I set to check first letter only.
 
 %% Retrieve data from database
-javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
 
-setdbprefs({'DataReturnFormat';'NullStringRead'},{'dataset';''})
-s.dbname = 'hfbetas';
-s.user   = 'okomarov';
-s.driver = 'com.mysql.jdbc.Driver';
-s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', s.dbname);
-s.pass   = input('Password: ','s');
-conn     = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
-clear s
-clc
-if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
+% Connect to db
+conn = connect2db();
 
 % Retrieve final match table
 curs     = exec(conn,'SELECT * FROM final;');
@@ -294,18 +285,7 @@ while ~isempty(permnos)
 end
 toc    
 %% Update back to db
-javaaddpath('C:\Program Files (x86)\MySQL\MySQL Connector J\mysql-connector-java-5.1.30-bin.jar')
-
-% Establish connection
-s.dbname = 'hfbetas';
-s.user   = 'okomarov';
-s.driver = 'com.mysql.jdbc.Driver';
-s.dburl  = sprintf('jdbc:mysql://localhost:3306/%s', s.dbname);
-s.pass   = input('Password: ','s');
-conn     = database(s.dbname, s.user, s.pass, s.driver, s.dburl);
-clear s
-clc
-if isconnection(conn),fprintf('Connection established\n'), else error('Not connected.'), end
+conn = connect2db();
 
 tic
 cols  = {'ID', 'permno','score'};

@@ -1,6 +1,8 @@
 data/
 !data/data.zip
 
+utils/connect2db.m
+
 *.mat
 *.mexw64
 
