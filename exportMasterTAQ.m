@@ -128,20 +128,31 @@ TAQcodetype.ICODE(missing(:,4)) = {'\N'};
 export(TAQcodetype,'file',fullfile(d,'TAQcodetype.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
 toc
 %% TAQshrout
-% Number of shares
-TAQshrout = unique(TAQmaster(:,{'CUSIP8','SYMBOL','FDATE','SHROUT'}));
-TAQshrout = sortrows(TAQshrout,{'CUSIP8','FDATE','SYMBOL'});
+% Number of shares excluding 0s
+
+% Get rid of 0s
+vars      = {'CUSIP8','SYMBOL','FDATE','SHROUT'};
+TAQshrout = TAQmaster(TAQmaster.SHROUT ~= 0,vars);
+
+% NOTE: there might be multiple shrouts for same date, take last.
+%       Since master files are concatenated vertically, last should
+%       correspond to most recent master file.
+%       Also, the CUSIP, FDATE, SYMBOL ordering is relevant for the
+%       encoding
+[~,idx]   = unique(TAQshrout(:,{'CUSIP8','FDATE','SYMBOL'}),[],'last');
+TAQshrout = TAQshrout(idx, {'CUSIP8','SYMBOL','FDATE','SHROUT'});
+
+% Encode 
 idx       =  [true; ~(strcmpi(TAQshrout.CUSIP8(2:end), TAQshrout.CUSIP8(1:end-1)) &...
                       strcmpi(TAQshrout.SYMBOL(2:end), TAQshrout.SYMBOL(1:end-1)) &...
                               TAQshrout.SHROUT(2:end)==TAQshrout.SHROUT(1:end-1))];
 TAQshrout = TAQshrout(idx,:);
 
-% Get rid of 0s
-TAQshrout = TAQshrout(TAQshrout.SHROUT ~= 0,:);
 
 % No missing values (nothing to replace with \N, for MySQL's LOAD INFILE)
 missing = ismissing(TAQshrout);
-export(TAQshrout,'file',fullfile(d,'TAQshrout.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
+% export(TAQshrout,'file',fullfile(d,'TAQshrout.tab'),'Delim','\t') % Remember to change manually to UTF8 encoding
+save TAQshrout.mat TAQshrout
 toc
 %% WRDStclink
 % Import .csv
