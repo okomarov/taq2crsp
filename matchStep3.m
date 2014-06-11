@@ -150,13 +150,16 @@ while ~isempty(onlyCusip)
     ID       = ID+1;
     cusip    = onlyCusip(1);
     icusip   = strcmpi(cusip, taq2crsp.cusip);
+    % Work backwards to retrieve by permno if any matched record has it
+    tmp     = taq2crsp(icusip,:);
+    ipermno = ismember(taq2crsp.permno, tmp.permno);
+    tmp     = taq2crsp(icusip | ipermno);
+                   
     nmatches = nnz(icusip);
-     
     if  nmatches == 1 
         taq2crsp.ID(icusip) = ID;
     else
-        % Retrieve records with given CUSIP
-        tmp = taq2crsp(icusip,:);
+
         pos = find(icusip);
         
         % Initialize reference symbol
