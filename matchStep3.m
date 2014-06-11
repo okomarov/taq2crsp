@@ -272,7 +272,10 @@ while ~isempty(permnos)
                 noOverlap = all(noOverlap == 0 | noOverlap == numel(refDates));
 
                 % [WEAK LINK] No common root
-                if refSym(1) ~= curr(1) && noOverlap
+                if noOverlap && ...
+                    ( (refN < 4 &&      refSym(1)   ~= curr(1)   ) || ...
+                      (refN > 3 && ~all(refSym(1:2) ~= curr(1:2)))   )
+
                     idx         = strcmpi(curr, tmp.symbol);
                     tmp.ID(idx) = refID;
                 else
