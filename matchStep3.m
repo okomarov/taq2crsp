@@ -192,6 +192,7 @@ while ~isempty(onlyCusip)
                 idx         = strcmpi(curr, tmp.symbol);
                 tmp.ID(idx) = refID;
                 refSym      = curr;
+                refN        = tmp.symlen(ii);
             else
                 % Check that periods don't overlap
                 refDates  = tmp.datef(strcmpi(refSym,tmp.symbol));
@@ -200,15 +201,18 @@ while ~isempty(onlyCusip)
                 noOverlap = all(noOverlap == 0 | noOverlap == numel(refDates));
 
                 % [WEAK LINK: how to identify root] No common root
-                if refSym(1) ~= curr(1) && noOverlap
+                if noOverlap && ...
+                    ( (refN < 4 &&      refSym(1)   ~= curr(1)   ) || ...
+                      (refN > 3 && ~all(refSym(1:2) ~= curr(1:2)))   )
                     idx         = strcmpi(curr, tmp.symbol);
                     tmp.ID(idx) = refID;
                 else
-                    refID       = ID + 1;
+                    ID          = ID + 1;
                     idx         = strcmpi(curr, tmp.symbol);
-                    tmp.ID(idx) = refID;
+                    tmp.ID(idx) = ID;
                 end
                 refSym = curr;
+                refN   = tmp.symlen(ii);
             end
         end % LOOP
         % Assign back to original array
