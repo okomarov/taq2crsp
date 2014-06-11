@@ -152,21 +152,10 @@ UPDATE final f
 SET f.permno = q.permno, f.score = q.score+1
 WHERE f.permno is null;
 
-select * from final where score = 11
-
-
-select permno, symbol, @l:= left(symbol,char_length(symbol)-2) l
-	from final
-	where right(symbol,2) = 'CL' and permno is not null
-	order by permno, symbol
-
-select * from final where permno = 69112;
-select * from final where name like 'AM INTERNATIONALINC';
-
-select * from final where symbol = 'abnpra'
-
 # 3) SYMBOL and NAME and NAME only on MATLAB with levenshtein distance
+# ... see matchStep3.m (Matlab file)
 
+# END) Summary of the matches
 select score, count(*), count(score)*100/count(*)
 	from final
 	group by score with rollup;
