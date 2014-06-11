@@ -264,6 +264,7 @@ while ~isempty(permnos)
                 idx         = strcmpi(curr, tmp.symbol);
                 tmp.ID(idx) = refID;
                 refSym      = curr;
+                refN        = tmp.symlen(ii);
             else
                 % Check that periods don't overlap
                 refDates  = tmp.datef(strcmpi(refSym,tmp.symbol));
@@ -279,11 +280,12 @@ while ~isempty(permnos)
                     idx         = strcmpi(curr, tmp.symbol);
                     tmp.ID(idx) = refID;
                 else
-                    refID       = ID + 1;
+                    ID          = ID + 1;
                     idx         = strcmpi(curr, tmp.symbol);
-                    tmp.ID(idx) = refID;
+                    tmp.ID(idx) = ID;
                 end
                 refSym = curr;
+                refN   = tmp.symlen(ii);
             end
         end % LOOP
         % Assign back to original array
