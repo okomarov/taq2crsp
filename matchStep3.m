@@ -126,15 +126,17 @@ load debugstate2
 
 % Set starting value of ID
 ID = 0;
+taq2crsp.ID = NaN(size(taq2crsp,1),1);
 
 % If only symbol tag by that independently of the date 
 % (ensure that symbols retrieved here don't have a match on the ones with cusip/permno)
-onlySymbol = unique(taq2crsp.symbol(isnan(taq2crsp.permno) & cellfun('isempty',taq2crsp.cusip)));
+idx = isnan(taq2crsp.permno) & cellfun('isempty',taq2crsp.cusip);
+onlySymbol = unique(taq2crsp.symbol(idx));
 
 while ~isempty(onlySymbol)
     ID     = ID+1;
     symbol = onlySymbol(1);
-    taq2crsp.ID(strcmpi(symbol, taq2crsp.symbol)) = ID;
+    taq2crsp.ID(strcmpi(symbol, taq2crsp.symbol) & idx) = ID;
     onlySymbol = onlySymbol(2:end);
 end
 tic
