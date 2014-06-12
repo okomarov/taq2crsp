@@ -9,7 +9,7 @@
 %   except for an exhaustive hard-coding. I set to check first letter only.
 
 %% Retrieve data from database
-
+addpath .\utils\
 % Connect to db
 conn = connect2db();
 
@@ -53,12 +53,11 @@ for ii = 1:size(taq2crsp,1)
     % Restrict datef to be in monthly [namedt, nameenddt]
     date  = fix(datef/100);
     idate = date >= startdt & date <= enddt;
-    % Create char comparison matrix
+    % Create char comparison matrix of symbols that fall within period
     tmp      = crsp(idate,{'tsymbol','comnam','permno'});
     ticklen  = cellfun('size',tmp.tsymbol,2);
     ctsymbol = char(tmp.tsymbol);
     
-   
     % Check letter by letter
     n        = min(numel(symbol), size(ctsymbol,2)); 
     nchars   = sum(bsxfun(@eq, ctsymbol(1:n), symbol(1:n)),2);
@@ -76,9 +75,18 @@ for ii = 1:size(taq2crsp,1)
     iname = d == min(d) & d < 10;
     % If unique name matched
     if nnz(iname) == 1
+        % First, expand back through cusip
         pmatch = find(imatch);
-        taq2crsp(ii,:).score = 30;
-        taq2crsp(ii,:).permno = tmp.permno(pmatch(iname));
+        cusip  = taq2crsp.cusip(ii);
+        if ~isempty(cusip)
+            idx = ismember(taq2crsp.cusip, cusip);
+            taq2crsp.score(idx)  = 32;
+            taq2crsp.permno(idx) = tmp.permno(pmatch(iname));
+        end
+        % Then re-label original match
+        taq2crsp.score(ii)  = 30;
+        taq2crsp.permno(ii) = tmp.permno(pmatch(iname));
+        
         fprintf('Lev dist %d on %d\n',min(d),ii)
         %             disp(char(name,comnames(iname)))
     end
@@ -112,8 +120,17 @@ for ii = 1:size(taq2crsp,1)
     iname = d == min(d) & d < 10;
     % If unique name matched
     if nnz(iname) == 1
-        taq2crsp(ii,:).score = 40;
-        taq2crsp(ii,:).permno = tmp.permno(iname);
+        % First, expand back through cusip
+        cusip = taq2crsp.cusip(ii);
+        if ~isempty(cusip)
+            idx = ismember(taq2crsp.cusip, cusip);
+            taq2crsp.score(idx)  = 42;
+            taq2crsp.permno(idx) = tmp.permno(iname);
+        end
+        % Then re-label original match
+        taq2crsp.score(ii)  = 40;
+        taq2crsp.permno(ii) = tmp.permno(iname);
+        
         fprintf('Lev dist %d on %d\n',min(d),ii)
         %             disp(char(name,comnames(iname)))
     end
@@ -151,16 +168,16 @@ while ~isempty(onlyCusip)
     cusip    = onlyCusip(1);
     icusip   = strcmpi(cusip, taq2crsp.cusip);
     % Work backwards to retrieve by permno if any matched record has it
-    tmp     = taq2crsp(icusip,:);
-    ipermno = ismember(taq2crsp.permno, tmp.permno);
-    tmp     = taq2crsp(icusip | ipermno);
+    tmp   = taq2crsp(icusip,:);
+    icomb = ismember(taq2crsp.permno, tmp.permno) | icusip;
+    tmp   = taq2crsp(icomb,:);
                    
-    nmatches = nnz(icusip);
+    nmatches = nnz(icomb);
     if  nmatches == 1 
-        taq2crsp.ID(icusip) = ID;
+        taq2crsp.ID(icomb) = ID;
     else
 
-        pos = find(icusip);
+        pos = find(icomb);
         
         % Initialize reference symbol
         refID  = ID;
@@ -188,7 +205,7 @@ while ~isempty(onlyCusip)
             
             % CURR substr of REF
             elseif strncmpi(curr, refSym, ncurr)
-                refID       = ID + 1;
+                [refID, ID] = deal(ID + 1);
                 idx         = strcmpi(curr, tmp.symbol);
                 tmp.ID(idx) = refID;
                 refSym      = curr;
@@ -264,7 +281,7 @@ while ~isempty(permnos)
             
             % CURR substr of REF
             elseif strncmpi(curr, refSym, ncurr)
-                refID       = ID + 1;
+                [refID, ID] = deal(ID + 1);
                 idx         = strcmpi(curr, tmp.symbol);
                 tmp.ID(idx) = refID;
                 refSym      = curr;
@@ -303,7 +320,7 @@ conn = connect2db();
 
 tic
 cols  = {'ID', 'permno','score'};
-data  = [taq2crsp.(cols{1}) taq2crsp.(cols{2}) taq2crsp.(cols{2})];
+data  = [taq2crsp.(cols{1}) taq2crsp.(cols{2}) taq2crsp.(cols{3})];
 where = arrayfun(@(x) sprintf('where PK = %d',x), taq2crsp.PK,'un',0);
 update(conn, 'final', cols, data, where)
 toc
