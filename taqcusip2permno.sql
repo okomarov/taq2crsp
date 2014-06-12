@@ -152,6 +152,15 @@ UPDATE final f
 SET f.permno = q.permno, f.score = q.score+1
 WHERE f.permno is null;
 
+# SCORE: X + 2; Propagate previous match by cusip 
+UPDATE final f
+	join (select permno, cusip, score
+			from final
+			where score is not null and permno is not null) q
+	on f.cusip = q.cusip
+SET f.permno = q.permno, f.score = q.score + 1
+WHERE f.permno is null;
+
 # 3) SYMBOL and NAME and NAME only on MATLAB with levenshtein distance
 # ... see matchStep3.m (Matlab file)
 
