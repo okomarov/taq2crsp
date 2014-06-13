@@ -179,6 +179,11 @@ while ~isempty(onlyCusip)
 
         pos = find(icomb);
         
+        % Sort according to symbol
+        [~,isort] = sort(tmp.symbol);
+        tmp       = tmp(isort,:);
+        pos       = pos(isort);
+        
         % Initialize reference symbol
         refID  = ID;
         refSym = tmp.symbol{1};
@@ -255,6 +260,11 @@ while ~isempty(permnos)
         tmp = taq2crsp(ipermno,:);
         pos = find(ipermno);
         
+        % Sort according to symbol
+        [~,isort] = sort(tmp.symbol);
+        tmp       = tmp(isort,:);
+        pos       = pos(isort);
+        
         % Initialize reference symbol
         refID  = ID;
         refSym = tmp.symbol{1};
@@ -314,7 +324,9 @@ while ~isempty(permnos)
     end
     permnos = permnos(2:end);
 end
-toc    
+toc
+%% Save
+save taq2crsp.mat taq2crsp
 %% Update back to db
 conn = connect2db();
 
