@@ -60,7 +60,7 @@ for ii = 1:size(taq2crsp,1)
     
     % Check letter by letter
     n        = min(numel(symbol), size(ctsymbol,2)); 
-    nchars   = sum(bsxfun(@eq, ctsymbol(1:n), symbol(1:n)),2);
+    nchars   = sum(bsxfun(@eq, ctsymbol(:,1:n), symbol(1:n)),2);
     maxchars = max(nchars);
     % Ensure full tsymbol match (can be substring of symbol)
     imatch   = nchars == maxchars & ticklen == maxchars;
