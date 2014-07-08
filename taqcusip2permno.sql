@@ -165,6 +165,6 @@ WHERE f.permno is null;
 # ... see matchStep3.m (Matlab file)
 
 # END) Summary of the matches
-select score, count(*), count(*)*100/@totcount perc
+select score, count(*), count(score)*100/@totcount perc
 	from final, (select @totcount := count(*) from final) q
 	group by score with rollup;

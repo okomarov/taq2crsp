@@ -26,7 +26,7 @@ crsp = curs.data;
 crsp = replacedata(crsp, @upper, {'comnam','tsymbol'});
 
 close(curs),clear curs, close(conn), clear conn
-% save debugstate
+save debugstate
 %% Ticker and name match
 addpath .\utils\LevenDistance\
 load debugstate
@@ -336,6 +336,3 @@ data  = [taq2crsp.(cols{1}) taq2crsp.(cols{2}) taq2crsp.(cols{3})];
 where = arrayfun(@(x) sprintf('where PK = %d',x), taq2crsp.PK,'un',0);
 update(conn, 'final', cols, data, where)
 toc
-
-%% Save
-save taq2crsp.mat taq2crsp
