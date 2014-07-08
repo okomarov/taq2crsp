@@ -1,54 +1,3 @@
-%% TAQmaster for MySQL
-d = '.\data';
-%% Load .csv
-% List all TAQ .csv master files
-list      = unzip(fullfile(d,'raw','TAQmast.csv.zip'),d);
-list      = sort(list);
-% Due to a change in FDATE as per TAQ readme.txt which screwed the field,exclude 2000/02 and 2000/03 master files
-idx       = cellfun('isempty', regexp(list,'(mst200002|mst200003)','once'));
-delete(list{~idx});
-list      = list(idx);
-nfiles    = numel(list);
-TAQmaster = cell(nfiles,1);
-% fmt       = ['%s %s %s ',repmat('%*u8 ',1,9),'%*s %*f %*f %*s %*u8 %f %*[^\n]'];
-fmt       = ['%s %s %s ',repmat('%u8 ',1,9),'%s %f %*f %s %u8 %f %*[^\n]'];
-opts      = {'Delimiter',',','ReadVarNames',1,'CommentStyle',{'"','"'}};
-
-% LOOP by file - 20 sec
-for ii = 1:nfiles
-    disp(list{ii})
-    % Read in the whole master file
-    TAQmaster{ii} = dataset('File',list{ii}, 'Format',fmt, opts{:});
-    % Eventually rename DATEF to FDATE (in some files it changes)
-    TAQmaster{ii}.Properties.VarNames = regexprep(TAQmaster{ii}.Properties.VarNames,'(?i)datef','FDATE');
-end
-delete(list{:})
-%% Load .tab 
-% Add .tab master files from dvd
-list2     = unzip(fullfile(d,'raw','TAQmast.tab.zip'),d);
-list2     = sort(list2);
-fmt       = '%10c %30c %12c %c%c%c %*2c %c%c%c%c%c %c %4c %10c %*4c %c %c %8c %*[^\n]';
-names     = {'SYMBOL','NAME','CUSIP','ETN','ETA','ETB','ETP','ETX','ETT','ETO','ETW','ITS','ICODE','SHROUT','DENOM','TYPE','FDATE'};
-nfiles2   = numel(list2);
-TAQmaster = [TAQmaster; cell(nfiles2,1)];
-
-% LOOP by file - 20 sec
-tic
-for ii = 1:nfiles2
-    disp(list2{ii})
-    
-    % Read in fixed width master files in a temporary variable
-    fid = fopen(list2{ii});
-    tmp = textscan(fid, fmt,'Whitespace','');
-    fclose(fid);
-    
-    % Convert
-    f = @(x,n) cellstr(x{n});
-    g = @(x) [f(x,1) f(x,2) f(x,3)  num2cell(uint8([x{4:12}]-'0'))  f(x,13) num2cell(str2num(x{14})) f(x,15) num2cell(uint8(x{16}-'0')) num2cell(str2num(x{17}))];
-    TAQmaster{nfiles+ii} = cell2dataset(g(tmp),'VarNames',names);
-end
-toc
-delete(list2{:})
 %% Post-processing
 % NOTE: I decided to avoid additional post-processing on the symbols here,
 % and tackle the multiple SYMBOLs per CUSIP at 'same' FDATE later, after
@@ -63,8 +12,7 @@ delete(list2{:})
 % It's actually more complicated than it might appear, due to the numerous
 % suffixes that SYMBOLS have, see the TAQ monthly guide suffix appendices.
 
-% Concatenate everything - 67 sec
-TAQmaster = cat(1,TAQmaster{:});
+loadresults('TAQmaster')
 
 % Extract CUSIP info. CUSIP lengths can be 12 (full), 0 (absent) and 9 (missing NSCC issue digits)
 CUSIP = char(TAQmaster.CUSIP);
