@@ -12,7 +12,7 @@
 % It's actually more complicated than it might appear, due to the numerous
 % suffixes that SYMBOLS have, see the TAQ monthly guide suffix appendices.
 
-loadresults('TAQmaster')
+TAQmaster = loadresults('TAQmaster');
 
 % Extract CUSIP info. CUSIP lengths can be 12 (full), 0 (absent) and 9 (missing NSCC issue digits)
 CUSIP = char(TAQmaster.CUSIP);
